@@ -7,8 +7,7 @@ import Combine
 /// `.nonactivatingPanel` plus `canBecomeKey == false` means clicking or
 /// dragging it never pulls focus away from whatever you're watching. The window
 /// level sits just above the menu bar, which is what keeps it visible over
-/// full-screen apps without any private API — a CGS/SkyLight call would do the
-/// same but can't ship.
+/// full-screen apps without any private API.
 final class SubtitlePanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
@@ -43,19 +42,43 @@ final class SubtitlePanel: NSPanel {
     }
 }
 
-/// Owns the subtitle panel: builds it lazily, keeps it sized to its content,
-/// and remembers where the user dragged it.
+/// Hosts the SwiftUI subtitles and makes the whole surface a drag handle.
+///
+/// `isMovableByWindowBackground` alone does not work here: SwiftUI content
+/// hit-tests opaquely, so `NSHostingView` swallows the mouse-down before the
+/// window ever sees it. Forwarding to `performDrag` makes every part of the
+/// caption draggable, text included.
+final class DraggableHostingView<Content: View>: NSHostingView<Content> {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+
+    /// Show a grab cursor so it's discoverable that the panel can be moved.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+}
+
+/// Owns the subtitle panel: sizes it to its content, keeps it anchored where
+/// the user put it, and shows it only when there is something to read.
 @MainActor
 final class SubtitlePanelController {
 
     private let manager: SubtitleManager
     private var panel: SubtitlePanel?
-    private var hostingView: NSHostingView<SubtitleView>?
     private var cancellables: Set<AnyCancellable> = []
     private var moveObserver: NSObjectProtocol?
 
+    /// The bottom-left corner the panel is pinned to. Everything is measured
+    /// from here, so the window grows upward and never drifts. Only a user drag
+    /// or a recenter changes it.
+    private var anchor: NSPoint = .zero
+
+    /// Whether a session is running. The panel is only on screen when this is
+    /// true *and* there is text — an empty overlay is just a dark smudge.
+    private var sessionActive = false
+
     private static let originKey = "subtitlePanelOrigin"
-    /// Distance from the bottom of the screen when the user hasn't moved it.
     private static let defaultBottomInset: CGFloat = 120
 
     init(manager: SubtitleManager) {
@@ -67,72 +90,97 @@ final class SubtitlePanelController {
     }
 
     func show() {
-        let panel = existingOrNewPanel()
-        resizeToFit()
-        panel.orderFrontRegardless()   // visible without activating the app
-        Log.info(.subtitles, "Overlay shown")
+        sessionActive = true
+        _ = existingOrNewPanel()
+        updateVisibility()
+        Log.info(.subtitles, "Overlay armed")
     }
 
     func hide() {
+        sessionActive = false
         panel?.orderOut(nil)
         Log.info(.subtitles, "Overlay hidden")
     }
 
     // MARK: - Panel lifecycle
 
+    @discardableResult
     private func existingOrNewPanel() -> SubtitlePanel {
         if let panel { return panel }
 
-        let view = SubtitleView(manager: manager)
-        let hosting = NSHostingView(rootView: view)
-        hosting.sizingOptions = [.intrinsicContentSize]
+        let width = SubtitleView.maximumWidth + (SubtitleView.margin * 2) + 44
+        let panel = SubtitlePanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 80))
 
-        let panel = SubtitlePanel(contentRect: NSRect(x: 0, y: 0, width: SubtitleView.maximumWidth, height: 90))
+        // sizingOptions is deliberately empty: with .intrinsicContentSize the
+        // hosting view installs constraints and AppKit resizes the window
+        // itself, anchored top-left, which walks the panel down the screen as
+        // lines are added. SwiftUI reports its height instead and we set the
+        // frame ourselves.
+        let hosting = DraggableHostingView(rootView: SubtitleView(manager: manager) { [weak self] height in
+            MainActor.assumeIsolated { self?.applyHeight(height) }
+        })
+        hosting.sizingOptions = []
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 80)
+        hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
         self.panel = panel
-        self.hostingView = hosting
-
-        positionAtSavedOrDefaultOrigin(panel)
+        loadAnchor(for: panel)
         observeContentChanges()
         observeUserDrags(panel)
         return panel
     }
 
-    /// Resize whenever the text changes, so the box hugs its content instead of
-    /// leaving a fixed-height slab on screen.
+    /// Resize around the anchor so the bottom edge stays put and the box grows
+    /// upward, then keep the whole thing on an attached screen.
+    private func applyHeight(_ height: CGFloat) {
+        guard let panel, height > 1 else { return }
+
+        var frame = panel.frame
+        frame.size.height = height
+        frame.origin = anchor
+        panel.setFrame(clampedToScreen(frame), display: true)
+    }
+
+    private func clampedToScreen(_ frame: NSRect) -> NSRect {
+        let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return frame }
+
+        var clamped = frame
+        clamped.origin.x = min(max(clamped.minX, visible.minX), visible.maxX - clamped.width)
+        clamped.origin.y = min(max(clamped.minY, visible.minY), visible.maxY - clamped.height)
+        return clamped
+    }
+
+    /// Show the panel only while a session is running and there is text.
     private func observeContentChanges() {
         manager.$current
             .combineLatest(manager.$history)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in self?.resizeToFit() }
+            .sink { [weak self] _, _ in self?.updateVisibility() }
             .store(in: &cancellables)
     }
 
-    private func resizeToFit() {
-        guard let panel, let hostingView else { return }
+    private func updateVisibility() {
+        guard let panel else { return }
+        let shouldShow = sessionActive && !manager.isEmpty
 
-        let fitting = hostingView.fittingSize
-        guard fitting.height > 0, fitting.width > 0 else { return }
-
-        // Grow upward from the bottom-left corner so the panel stays anchored
-        // where the user put it rather than drifting as lines are added.
-        var frame = panel.frame
-        let bottom = frame.minY
-        frame.size = NSSize(width: min(fitting.width, SubtitleView.maximumWidth + 20),
-                            height: fitting.height)
-        frame.origin.y = bottom
-        panel.setFrame(frame, display: true)
+        if shouldShow, !panel.isVisible {
+            panel.orderFrontRegardless()   // visible without activating the app
+        } else if !shouldShow, panel.isVisible {
+            panel.orderOut(nil)
+        }
     }
 
     // MARK: - Position
 
-    private func positionAtSavedOrDefaultOrigin(_ panel: SubtitlePanel) {
+    private func loadAnchor(for panel: SubtitlePanel) {
         if let saved = UserDefaults.standard.string(forKey: Self.originKey) {
             let point = NSPointFromString(saved)
             // Only honour a saved spot that's still on an attached display —
             // otherwise unplugging a monitor strands the panel off-screen.
-            if NSScreen.screens.contains(where: { $0.visibleFrame.contains(point) }) {
+            if NSScreen.screens.contains(where: { $0.visibleFrame.insetBy(dx: -1, dy: -1).contains(point) }) {
+                anchor = point
                 panel.setFrameOrigin(point)
                 return
             }
@@ -143,11 +191,11 @@ final class SubtitlePanelController {
     private func centerNearBottom(_ panel: SubtitlePanel) {
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
-        let origin = NSPoint(
+        anchor = NSPoint(
             x: visible.midX - panel.frame.width / 2,
             y: visible.minY + Self.defaultBottomInset
         )
-        panel.setFrameOrigin(origin)
+        panel.setFrameOrigin(anchor)
     }
 
     private func observeUserDrags(_ panel: SubtitlePanel) {
@@ -157,7 +205,14 @@ final class SubtitlePanelController {
             queue: .main
         ) { note in
             guard let moved = note.object as? NSPanel else { return }
-            UserDefaults.standard.set(NSStringFromPoint(moved.frame.origin), forKey: Self.originKey)
+            MainActor.assumeIsolated {
+                // Resizing sets the origin to the anchor already, so a frame
+                // that still matches is our own move, not the user's.
+                guard moved.frame.origin != self.anchor else { return }
+                self.anchor = moved.frame.origin
+                UserDefaults.standard.set(NSStringFromPoint(moved.frame.origin), forKey: Self.originKey)
+                Log.info(.subtitles, "Overlay moved to \(Int(moved.frame.minX)),\(Int(moved.frame.minY))")
+            }
         }
     }
 
@@ -166,5 +221,6 @@ final class SubtitlePanelController {
         UserDefaults.standard.removeObject(forKey: Self.originKey)
         guard let panel else { return }
         centerNearBottom(panel)
+        Log.info(.subtitles, "Overlay recentred")
     }
 }

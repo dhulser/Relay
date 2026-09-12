@@ -79,6 +79,47 @@ final class SubtitleManagerTests: XCTestCase {
         XCTAssertLessThan(updates, 10, "20 deltas coalesced into \(updates) redraws — too many")
     }
 
+    /// The very first line has nothing to be a turn break from.
+    func testFirstLineIsNeverATurnBreak() {
+        let manager = SubtitleManager()
+        manager.updatePartial("hola")
+        manager.complete("hello")
+
+        XCTAssertEqual(manager.history.count, 1)
+        XCTAssertFalse(manager.history[0].startsNewTurn)
+    }
+
+    /// One person talking straight through must not be chopped into turns.
+    func testBackToBackLinesAreTheSameTurn() {
+        let manager = SubtitleManager()
+        manager.updatePartial("uno")
+        manager.complete("one")
+        manager.updatePartial("dos")
+        manager.complete("two")
+
+        XCTAssertEqual(manager.history.count, 2)
+        XCTAssertFalse(manager.history[1].startsNewTurn,
+                       "no pause between these, so they are one speaker's turn")
+    }
+
+    /// A gap longer than the turn threshold marks the next line as a new turn.
+    func testSilenceBetweenUtterancesStartsANewTurn() {
+        let manager = SubtitleManager()
+        manager.updatePartial("uno")
+        manager.complete("one")
+
+        let paused = expectation(description: "silence elapsed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) { paused.fulfill() }
+        wait(for: [paused], timeout: 4)
+
+        manager.updatePartial("dos")
+        manager.complete("two")
+
+        XCTAssertEqual(manager.history.count, 2)
+        XCTAssertTrue(manager.history[1].startsNewTurn,
+                      "a 1.7s silence should read as a turn change")
+    }
+
     func testClearEmptiesEverything() {
         let manager = SubtitleManager()
         manager.complete("something")

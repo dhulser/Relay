@@ -28,6 +28,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     private var reconnectScheduled = false
     private var loggedFirstAudioSend = false
     private var unknownEventTypesSeen = Set<String>()
+    private var loggedRawSample = false
 
     /// The utterance being spoken right now, accumulated from deltas so the
     /// engine emits whole-utterance text rather than fragments.
@@ -193,7 +194,26 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     }
 
     private func handle(rawJSON: Data) {
-        guard let event = try? JSONDecoder().decode(RealtimeServerEvent.self, from: rawJSON) else { return }
+        // Every inbound frame is logged once per distinct event type. A frame we
+        // can't decode used to vanish silently, which made an empty session
+        // indistinguishable from a schema mismatch.
+        if let text = String(data: rawJSON, encoding: .utf8) {
+            let head = String(text.prefix(240))
+            if !loggedRawSample {
+                loggedRawSample = true
+                Log.info(.realtime, "first inbound frame: \(head)")
+            }
+        }
+
+        guard let event = try? JSONDecoder().decode(RealtimeServerEvent.self, from: rawJSON) else {
+            let head = String(String(data: rawJSON, encoding: .utf8)?.prefix(240) ?? "<binary>")
+            Log.error(.realtime, "could not decode inbound frame: \(head)")
+            return
+        }
+
+        if unknownEventTypesSeen.insert(event.type).inserted {
+            Log.info(.realtime, "event: \(event.type)")
+        }
 
         switch RealtimeEventKind(from: event) {
         case .sessionReady:
@@ -202,7 +222,14 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         case .translatedDelta(let text):
             guard !text.isEmpty else { return }
             currentUtterance += text
-            let running = currentUtterance
+            // The translation model streams continuously and only rarely marks
+            // an utterance done, so without this everything piles into one
+            // ever-growing paragraph. Completed sentences become their own
+            // caption lines.
+            flushCompletedSentences()
+
+            let running = currentUtterance.trimmingCharacters(in: .whitespaces)
+            guard !running.isEmpty else { return }
             DispatchQueue.main.async { [weak self] in self?.onPartialTranslation?(running) }
 
         case .translatedCompleted(let text):
@@ -228,13 +255,51 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
             // A rejected key or model is not worth retrying.
             if Self.isFatal(message) { fail(with: message) }
 
-        case .other(let type):
-            // Log each unrecognised type once, so a schema change is obvious
-            // rather than silent.
-            if unknownEventTypesSeen.insert(type).inserted {
-                Log.info(.realtime, "Unhandled event: \(type)")
-            }
+        case .other:
+            break // already logged above by type
         }
+    }
+
+    /// Emits every complete sentence sitting in the buffer as a finished line,
+    /// leaving the trailing fragment as the in-flight utterance.
+    private func flushCompletedSentences() {
+        while let cut = Self.sentenceEnd(in: currentUtterance) {
+            let sentence = String(currentUtterance[..<cut])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            currentUtterance = String(currentUtterance[cut...])
+            guard !sentence.isEmpty else { continue }
+            DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(sentence) }
+        }
+
+        // Someone talking without punctuation would otherwise never get a line
+        // break, so fall back to cutting at a word boundary.
+        guard currentUtterance.count > Self.maximumLineCharacters else { return }
+        let limit = currentUtterance.index(currentUtterance.startIndex,
+                                           offsetBy: Self.maximumLineCharacters)
+        guard let space = currentUtterance[..<limit].lastIndex(of: " ") else { return }
+
+        let chunk = String(currentUtterance[..<space]).trimmingCharacters(in: .whitespaces)
+        currentUtterance = String(currentUtterance[currentUtterance.index(after: space)...])
+        guard !chunk.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(chunk) }
+    }
+
+    private static let maximumLineCharacters = 160
+
+    /// Index just past the end of the first complete sentence, or nil.
+    /// A terminator must be followed by whitespace so decimals and initials
+    /// ("3.5", "J. Smith") don't split a line.
+    private static func sentenceEnd(in text: String) -> String.Index? {
+        let terminators: Set<Character> = [".", "!", "?", "\u{2026}", "\u{3002}", "\u{FF01}", "\u{FF1F}"]
+        var index = text.startIndex
+        while index < text.endIndex {
+            defer { index = text.index(after: index) }
+            guard terminators.contains(text[index]) else { continue }
+            let next = text.index(after: index)
+            guard next < text.endIndex else { continue }
+            if text[next].isWhitespace { return next }
+        }
+        return nil
     }
 
     private static func isFatal(_ message: String) -> Bool {

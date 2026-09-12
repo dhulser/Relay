@@ -14,6 +14,10 @@ final class SubtitleManager: ObservableObject {
     struct Line: Identifiable, Equatable {
         let id = UUID()
         let text: String
+        /// True when a noticeable silence preceded this line, which usually
+        /// means a different speaker or a new thought. This is a pause, not an
+        /// identity — none of the engines can tell us *who* is talking.
+        let startsNewTurn: Bool
     }
 
     /// Finished lines, oldest first.
@@ -21,6 +25,9 @@ final class SubtitleManager: ObservableObject {
 
     /// The utterance being translated right now. Empty when nothing is in flight.
     @Published private(set) var current: String = ""
+
+    /// Whether the in-flight utterance followed a noticeable pause.
+    @Published private(set) var currentStartsNewTurn = false
 
     /// How often partial text may redraw. 150 ms is slow enough not to flicker,
     /// fast enough to feel live.
@@ -33,6 +40,14 @@ final class SubtitleManager: ObservableObject {
     /// Wipe the overlay after this much silence so stale text doesn't sit
     /// there implying it's current.
     private static let idleClear: TimeInterval = 12
+
+    /// Silence longer than this between utterances is treated as a turn
+    /// change. Long enough to skip the natural gap between sentences from one
+    /// speaker, short enough to catch a genuine hand-off.
+    private static let turnGap: TimeInterval = 1.4
+
+    private var lastCompletedAt = Date.distantPast
+    private var currentStartedAt: Date?
 
     private var pending: String?
     private var flushWork: DispatchWorkItem?
@@ -48,6 +63,14 @@ final class SubtitleManager: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        // The first fragment of an utterance marks when speech resumed, which
+        // is what the turn gap is measured against.
+        if current.isEmpty, currentStartedAt == nil {
+            currentStartedAt = Date()
+            currentStartsNewTurn = !history.isEmpty
+                && Date().timeIntervalSince(lastCompletedAt) > Self.turnGap
+        }
+
         pending = trimmed
         scheduleFlush()
         resetIdleTimer()
@@ -59,10 +82,17 @@ final class SubtitleManager: ObservableObject {
         cancelPendingFlush()
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let startedAt = currentStartedAt ?? Date()
+        let newTurn = !history.isEmpty && startedAt.timeIntervalSince(lastCompletedAt) > Self.turnGap
+
         current = ""
+        currentStartsNewTurn = false
+        currentStartedAt = nil
+        lastCompletedAt = Date()
+
         guard !trimmed.isEmpty else { return }
 
-        history.append(Line(text: trimmed))
+        history.append(Line(text: trimmed, startsNewTurn: newTurn))
         if history.count > Self.maxHistory {
             history.removeFirst(history.count - Self.maxHistory)
         }
@@ -76,6 +106,9 @@ final class SubtitleManager: ObservableObject {
         idleTimer = nil
         history.removeAll()
         current = ""
+        currentStartsNewTurn = false
+        currentStartedAt = nil
+        lastCompletedAt = .distantPast
     }
 
     // MARK: - Debounce
