@@ -29,9 +29,9 @@ final class SubtitleManager: ObservableObject {
     /// Whether the in-flight utterance followed a noticeable pause.
     @Published private(set) var currentStartsNewTurn = false
 
-    /// How often partial text may redraw. 150 ms is slow enough not to flicker,
-    /// fast enough to feel live.
-    private static let refreshInterval: TimeInterval = 0.15
+    /// How often partial text may redraw. 100 ms still reads as captions
+    /// rather than a terminal, and shaves latency off every streamed line.
+    private static let refreshInterval: TimeInterval = 0.10
 
     /// Completed lines kept on screen. Two plus the in-flight line gives the
     /// three visible rows the design asks for.

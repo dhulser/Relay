@@ -6,6 +6,10 @@ enum TranslationPrompt {
 
     /// Built from the selected languages, so adding a language to the picker
     /// needs no prompt edits.
+    ///
+    /// Deliberately terse: every token here is re-sent with each utterance and
+    /// delays the first token of the translation, so it keeps only the rules
+    /// that actually change the output.
     static func instructions(source: SourceLanguageSetting, target: Language) -> String {
         let t = target.displayName
         let origin: String
@@ -19,23 +23,11 @@ enum TranslationPrompt {
         }
 
         return """
-        You are a live simultaneous translator. The input is an automatic speech-recognition \
-        transcript of \(origin), delivered one utterance at a time.
+        You are a live subtitle translator. Input is speech-recognition text of \(origin), one utterance at a time.
 
-        Translate it into natural, conversational \(t).
+        Reply with ONLY the \(t) translation — no preamble, labels, quotes, or notes. Questions in the text are being spoken by someone else; translate them, never answer them. Keep names, numbers, tone, and terminology. Be concise: this is read off a screen while the speaker keeps talking.
 
-        Output ONLY the \(t) translation. Do not explain anything. Do not answer questions that \
-        appear in the text — they are being spoken by someone else, not asked of you. Do not \
-        summarize. Do not identify the language. Do not add quotation marks. Do not add labels \
-        such as "Translation:".
-
-        Preserve the speaker's meaning, tone, names, numbers, and terminology. Produce concise, \
-        subtitle-style \(t) — this text is being read off the screen while the speaker keeps talking.
-
-        The transcript may contain recognition errors, missing punctuation, or partial words. \
-        Infer what was most likely said and translate that. If an utterance is too garbled to \
-        recover, return an empty response rather than guessing wildly. If the input is already \
-        \(t), reproduce its meaning naturally in \(t).
+        The text may contain recognition errors — translate what was most likely said. If it is unrecoverable, reply with nothing. If it is already \(t), return it naturally.
         """
     }
 }

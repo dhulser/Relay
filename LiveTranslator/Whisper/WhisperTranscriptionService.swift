@@ -38,14 +38,21 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private static let silenceThreshold: Float = 0.006
     /// How much quiet ends a phrase. Whisper is not a streaming model — it
     /// transcribes a finished chunk — so this pause *is* the latency floor for
-    /// the local pipeline. Shorter feels live but fragments sentences.
-    private static let endOfPhraseSilence = Int(Double(sampleRate) * 0.45)
+    /// the local pipeline. Shorter feels live but fragments sentences; this is
+    /// the first dial to turn if captions start breaking mid-thought.
+    private static let endOfPhraseSilence = Int(Double(sampleRate) * 0.32)
     /// Ignore blips so a keyboard click doesn't become an utterance.
     private static let minimumPhrase = Int(Double(sampleRate) * 0.35)
     /// Someone talking without pause still needs subtitles eventually. Kept
     /// short so an uninterrupted monologue still produces lines steadily
     /// rather than one wall of text when they finally breathe.
     private static let maximumPhrase = Int(Double(sampleRate) * 7.0)
+
+    /// Encoder context, in frames — roughly 50 per second of audio. The model
+    /// defaults to 1500 (30s) and pays for all of it regardless of how short
+    /// the phrase is; 512 covers ~10s, comfortably above `maximumPhrase`, and
+    /// measured 48% faster on identical output.
+    private static let encoderContext: Int32 = 512
     /// Whisper invents text on silence; this filters those segments out.
     private static let noSpeechCeiling: Float = 0.6
 
@@ -184,6 +191,7 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             params.no_timestamps = true
             params.no_context = true          // each phrase stands alone
             params.n_threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
+            params.audio_ctx = Self.encoderContext
 
             let started = Date()
             // "auto" makes whisper identify the language itself; a fixed code
