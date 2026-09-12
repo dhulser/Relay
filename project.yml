@@ -1,0 +1,96 @@
+name: LiveTranslator
+
+options:
+  bundleIdPrefix: co.kevel
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+targets:
+  LiveTranslator:
+    type: application
+    platform: macOS
+    sources:
+      - path: LiveTranslator
+    dependencies:
+      - sdk: Accelerate.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+    entitlements:
+      path: LiveTranslator/LiveTranslator.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.network.client: true
+    info:
+      path: LiveTranslator/Info.plist
+      properties:
+        CFBundleName: Live Translator
+        CFBundleDisplayName: Live Translator
+        # Menu-bar-only app: no Dock icon, no main window.
+        LSUIElement: true
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.LiveTranslator
+        PRODUCT_NAME: LiveTranslator
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        # Manual signing with the existing "Apple Development" identity. A stable
+        # signature keeps the Screen Recording TCC grant across rebuilds, which
+        # ad-hoc signing would not.
+        DEVELOPMENT_TEAM: 4PJ4624484
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        OTHER_CODE_SIGN_FLAGS: "--timestamp=none"
+        # Swift 5 language mode: async/await works, but we skip Swift 6's
+        # strict data-race checking, which would be pure friction for an MVP.
+        SWIFT_VERSION: "5.0"
+        # Apple Silicon only: the vendored whisper.cpp libraries are arm64,
+        # built for Metal and the Neural Engine. An x86_64 slice could not link
+        # and would lose the acceleration that makes local transcription viable.
+        ARCHS: arm64
+        ENABLE_HARDENED_RUNTIME: NO
+        COMBINE_HIDPI_IMAGES: YES
+        # Vendored whisper.cpp — see scripts/build-whisper.sh to rebuild.
+        SWIFT_OBJC_BRIDGING_HEADER: LiveTranslator/Whisper/WhisperBridge.h
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/lib
+        OTHER_LDFLAGS: -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lc++
+
+  LiveTranslatorTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Tests/Fixtures
+        buildPhase: resources
+    dependencies:
+      - target: LiveTranslator
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.LiveTranslatorTests
+        DEVELOPMENT_TEAM: 4PJ4624484
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        # @testable import pulls in the app's bridging header, so the test
+        # target needs to find whisper.h too.
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/lib
+
+schemes:
+  LiveTranslator:
+    build:
+      targets:
+        LiveTranslator: all
+        LiveTranslatorTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LiveTranslatorTests
