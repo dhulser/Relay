@@ -4,7 +4,9 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
 
     @State private var apiKeyField = ""
-    @State private var saveMessage: String?
+    /// True only while the user is deliberately entering a new key. A stored
+    /// key shows as stored — never as an empty box asking to be filled in.
+    @State private var isEnteringKey = false
 
     var body: some View {
         Form {
@@ -54,32 +56,42 @@ struct SettingsView: View {
             }
 
             Section("\(appState.provider.credentialName) API Key") {
-                SecureField("API Key", text: $apiKeyField,
-                            prompt: Text(appState.provider.keyPlaceholder))
-                    .textContentType(.password)
-
-                HStack {
-                    Button("Save") { save() }
-                        .disabled(apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    if appState.hasAPIKey {
-                        Button("Remove") { remove() }
+                if appState.hasAPIKey && !isEnteringKey {
+                    LabeledContent("API Key") {
+                        Label("Stored in Keychain", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
                     }
 
-                    Spacer()
+                    HStack {
+                        Button("Replace…") {
+                            apiKeyField = ""
+                            isEnteringKey = true
+                        }
+                        Button("Remove", role: .destructive) { remove() }
+                        Spacer()
+                    }
+                } else {
+                    SecureField("API Key", text: $apiKeyField,
+                                prompt: Text(appState.provider.keyPlaceholder))
+                        .textContentType(.password)
+                        .onSubmit { save() }
 
-                    if let saveMessage {
-                        Text(saveMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if appState.hasAPIKey {
-                        Label("Stored in Keychain", systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                    HStack {
+                        Button("Save") { save() }
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        if appState.hasAPIKey {
+                            Button("Cancel") {
+                                apiKeyField = ""
+                                isEnteringKey = false
+                            }
+                        }
+                        Spacer()
                     }
                 }
 
-                Text("Each provider's key is stored separately in your macOS Keychain, and is never written to disk or logged by this app.")
+                Text(keyFootnote)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -117,22 +129,31 @@ struct SettingsView: View {
             // The field holds a key for the provider that was selected a moment
             // ago — clear it rather than risk saving it under the new one.
             apiKeyField = ""
-            saveMessage = nil
+            isEnteringKey = false
         }
     }
 
+    private var keyFootnote: String {
+        let shared = appState.provider.usesLocalSpeech
+            ? ""
+            : " The OpenAI and OpenAI Realtime providers share this key."
+        return "Stored in your macOS Keychain. Never written to disk or logged by this app."
+            + shared
+    }
+
     private func save() {
-        let saved = KeychainService.saveAPIKey(apiKeyField, for: appState.provider)
-        saveMessage = saved ? "Saved" : "Could not save to Keychain"
+        guard !apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        KeychainService.saveAPIKey(apiKeyField, for: appState.provider)
         // Never keep the key in view state longer than needed.
         apiKeyField = ""
+        isEnteringKey = false
         appState.refreshAPIKeyState()
     }
 
     private func remove() {
         KeychainService.deleteAPIKey(for: appState.provider)
         apiKeyField = ""
-        saveMessage = "Removed"
+        isEnteringKey = false
         appState.refreshAPIKeyState()
     }
 }

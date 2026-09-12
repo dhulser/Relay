@@ -311,9 +311,15 @@ final class AppState: ObservableObject {
 
     func refreshAPIKeyState() {
         hasAPIKey = KeychainService.hasAPIKey(for: provider)
+
+        // Surface a missing key immediately rather than showing "Ready" and
+        // only admitting otherwise once Start is pressed.
         if hasAPIKey, status == .missingAPIKey {
             status = .idle
             errorDetail = nil
+        } else if !hasAPIKey, status == .idle {
+            status = .missingAPIKey
+            errorDetail = "Add your \(provider.credentialName) API key in Settings to start translating."
         }
     }
 
