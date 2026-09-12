@@ -8,6 +8,10 @@ enum CaptureError: LocalizedError {
     case permissionDenied
     case noDisplayFound
     case streamFailed(String)
+    /// macOS ended the capture on the user's behalf — the stop button in the
+    /// menu-bar recording indicator, or the system reclaiming the stream. A
+    /// deliberate stop, not a failure.
+    case stoppedExternally
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +21,8 @@ enum CaptureError: LocalizedError {
             return "No display available to capture audio from."
         case .streamFailed(let detail):
             return detail
+        case .stoppedExternally:
+            return "Screen recording was stopped."
         }
     }
 }
@@ -155,9 +161,24 @@ final class SystemAudioCaptureService: NSObject, SCStreamOutput, SCStreamDelegat
         // deliberately still lands here as "The user stopped the stream". A nil
         // stream means we asked for this, so it is not an error.
         guard self.stream != nil else { return }
+        self.stream = nil
+
+        // -3817 userStopped, -3821 systemStoppedStream. Both mean somebody
+        // deliberately ended the capture — reporting "⚠ Error: The user
+        // stopped the stream" for that is just wrong.
+        let failure = error as NSError
+        let deliberate = failure.domain == SCStreamErrorDomain
+            && (failure.code == -3817 || failure.code == -3821)
+
+        if deliberate {
+            Log.info(.audio, "Capture stopped externally")
+            DispatchQueue.main.async { [weak self] in
+                self?.onError?(CaptureError.stoppedExternally)
+            }
+            return
+        }
 
         Log.error(.audio, "Stream stopped with error: \(error.localizedDescription)")
-        self.stream = nil
         DispatchQueue.main.async { [weak self] in
             self?.onError?(CaptureError.streamFailed(error.localizedDescription))
         }

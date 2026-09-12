@@ -36,13 +36,16 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// RMS below this counts as silence. System audio is digital and clean, so
     /// this can sit low without picking up noise.
     private static let silenceThreshold: Float = 0.006
-    /// How much quiet ends a phrase. Too short chops mid-sentence; too long
-    /// adds latency to every subtitle.
-    private static let endOfPhraseSilence = Int(Double(sampleRate) * 0.65)
+    /// How much quiet ends a phrase. Whisper is not a streaming model — it
+    /// transcribes a finished chunk — so this pause *is* the latency floor for
+    /// the local pipeline. Shorter feels live but fragments sentences.
+    private static let endOfPhraseSilence = Int(Double(sampleRate) * 0.45)
     /// Ignore blips so a keyboard click doesn't become an utterance.
     private static let minimumPhrase = Int(Double(sampleRate) * 0.35)
-    /// Someone talking without pause still needs subtitles eventually.
-    private static let maximumPhrase = Int(Double(sampleRate) * 18.0)
+    /// Someone talking without pause still needs subtitles eventually. Kept
+    /// short so an uninterrupted monologue still produces lines steadily
+    /// rather than one wall of text when they finally breathe.
+    private static let maximumPhrase = Int(Double(sampleRate) * 7.0)
     /// Whisper invents text on silence; this filters those segments out.
     private static let noSpeechCeiling: Float = 0.6
 

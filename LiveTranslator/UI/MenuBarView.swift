@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -73,7 +74,7 @@ struct MenuBarView: View {
             }
 
             if appState.status == .missingAPIKey {
-                SettingsLink { Text("Open Settings") }
+                Button("Open Settings") { showSettings() }
                     .frame(maxWidth: .infinity)
             }
 
@@ -86,7 +87,7 @@ struct MenuBarView: View {
             Divider()
 
             HStack {
-                SettingsLink { Text("Settings…") }
+                Button("Settings…") { showSettings() }
                     .buttonStyle(.plain)
 
                 Button("Recenter Subtitles") { appState.resetSubtitlePosition() }
@@ -104,6 +105,25 @@ struct MenuBarView: View {
         }
         .padding(14)
         .frame(width: 280)
+    }
+
+    /// Opens Settings *in front*. A menu-bar-only app is an accessory, so it
+    /// is never the active app — without activating first, the window opens
+    /// behind whatever the user was looking at.
+    private func showSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+
+        // SwiftUI creates the window after the action returns, so raise it on
+        // the next pass. Panels are ours (overlay, popover); the settings
+        // window is the plain NSWindow.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            let settingsWindow = NSApp.windows.first {
+                $0.isVisible && !($0 is NSPanel) && $0.canBecomeMain
+            }
+            settingsWindow?.makeKeyAndOrderFront(nil)
+            settingsWindow?.orderFrontRegardless()
+        }
     }
 
     private var engineDescription: String {

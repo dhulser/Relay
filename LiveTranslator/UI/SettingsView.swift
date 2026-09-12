@@ -122,8 +122,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        // A bounded height, not fixedSize: letting the form size to its content
+        // made the window taller than the screen and pushed it under the menu
+        // bar. The grouped form scrolls internally when it overflows.
+        .frame(width: 520, height: 560)
         .onAppear { appState.refreshAPIKeyState() }
         .onChange(of: appState.provider) { _, _ in
             // The field holds a key for the provider that was selected a moment

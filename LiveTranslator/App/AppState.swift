@@ -356,6 +356,14 @@ final class AppState: ObservableObject {
     }
 
     private func fail(with message: String, kind: Error?) {
+        // Somebody pressed stop — in our UI or macOS's. End the session the
+        // same way Stop Translation would, with no error banner.
+        if let kind, case CaptureError.stoppedExternally = kind {
+            Log.info(.app, "Capture ended externally — stopping cleanly")
+            stop()
+            return
+        }
+
         Log.error(.app, message)
         audioLevel = 0
         engine?.stop()
