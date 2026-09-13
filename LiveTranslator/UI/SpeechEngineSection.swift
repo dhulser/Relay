@@ -38,11 +38,16 @@ struct SpeechEngineSection: View {
                 Toggle("Label speakers", isOn: $appState.labelSpeakers)
 
                 if appState.labelSpeakers {
+                    Picker("Voices", selection: $appState.expectedSpeakers) {
+                        Text("Detect automatically").tag(0)
+                        ForEach(2...6, id: \.self) { Text("\($0) speakers").tag($0) }
+                    }
                     SpeakerModelRow()
                 }
 
                 Text("Identifies voices from a voiceprint and tags each line. It recognises that "
-                     + "two lines share a voice, not who anyone is.")
+                     + "two lines share a voice, not who anyone is. If you know how many people "
+                     + "are talking, saying so stops it from inventing extra speakers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

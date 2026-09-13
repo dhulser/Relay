@@ -94,6 +94,36 @@ final class SpeakerClusteringTests: XCTestCase {
         XCTAssertEqual(clusterer.knownSpeakers, 1)
     }
 
+    /// A hard cap is the reliable fix when the user knows the count: no amount
+    /// of ambiguous audio may invent a third voice.
+    func testSpeakerCapIsNeverExceeded() throws {
+        let service = try makeService()
+        let clusterer = SpeakerClusterer()
+        clusterer.setMaximum(2)
+
+        // Includes deliberately short clips, which are the ones that used to
+        // spawn spurious speakers.
+        for name in ["speaker-a1", "speaker-b1", "speaker-a2", "speaker-b2", "speaker-a1"] {
+            let embedding = try XCTUnwrap(service.embed(samples(name)))
+            _ = clusterer.assign(embedding)
+        }
+        XCTAssertLessThanOrEqual(clusterer.knownSpeakers, 2)
+    }
+
+    /// Whoever spoke last is remembered, so a clip too short to embed can
+    /// inherit the current speaker instead of being guessed at.
+    func testShortClipsInheritTheCurrentSpeaker() throws {
+        let service = try makeService()
+        let clusterer = SpeakerClusterer()
+
+        let first = clusterer.assign(try XCTUnwrap(service.embed(samples("speaker-a1"))))
+        XCTAssertEqual(clusterer.inheritLastSpeaker(), first)
+
+        let second = clusterer.assign(try XCTUnwrap(service.embed(samples("speaker-b1"))))
+        XCTAssertEqual(clusterer.inheritLastSpeaker(), second)
+        XCTAssertNotEqual(first, second)
+    }
+
     func testResetForgetsEveryone() throws {
         let service = try makeService()
         let clusterer = SpeakerClusterer()

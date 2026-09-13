@@ -117,6 +117,13 @@ final class AppState: ObservableObject {
         provider.usesLocalSpeech && speechEngine == .whisper
     }
 
+    /// How many distinct voices to allow. 0 means "work it out", which is right
+    /// for unknown content but will occasionally over-split; naming the real
+    /// number makes extra speakers impossible.
+    @Published var expectedSpeakers: Int {
+        didSet { defaults.set(expectedSpeakers, forKey: Self.expectedSpeakersKey) }
+    }
+
     /// Auto-detect is possible when the Realtime model is doing the listening,
     /// or when the local recogniser is Whisper.
     var canAutoDetect: Bool {
@@ -161,6 +168,7 @@ final class AppState: ObservableObject {
     private static let speechEngineKey = "speechEngine"
     private static let whisperModelKey = "whisperModel"
     private static let labelSpeakersKey = "labelSpeakers"
+    private static let expectedSpeakersKey = "expectedSpeakers"
     private static let sourceKey = "sourceLanguage"
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
@@ -179,6 +187,7 @@ final class AppState: ObservableObject {
         speechEngine = defaults.string(forKey: Self.speechEngineKey).flatMap(SpeechEngine.init) ?? .whisper
         whisperModel = defaults.string(forKey: Self.whisperModelKey).flatMap(WhisperModel.init) ?? .small
         labelSpeakers = defaults.bool(forKey: Self.labelSpeakersKey)
+        expectedSpeakers = defaults.integer(forKey: Self.expectedSpeakersKey)
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
@@ -311,7 +320,8 @@ final class AppState: ObservableObject {
             }
             return WhisperTranscriptionService(model: whisperModel,
                                                modelURL: store.url(for: whisperModel),
-                                               speakers: makeSpeakerService())
+                                               speakers: makeSpeakerService(),
+                                               expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil)
         case .apple:
             guard #available(macOS 26.0, *) else {
                 throw EngineError.setupFailed(

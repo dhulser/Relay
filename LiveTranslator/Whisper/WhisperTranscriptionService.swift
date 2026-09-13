@@ -61,6 +61,11 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// Whisper invents text on silence; this filters those segments out.
     private static let noSpeechCeiling: Float = 0.6
 
+    /// Minimum speech needed for a trustworthy voiceprint. Measured: the same
+    /// voice scores 0.81 against itself at 1.5s but only 0.58 at 0.4s, so a
+    /// shorter clip says more about the clip than the speaker.
+    private static let minimumSpeakerAudio = 1.2
+
     private var phrase: [Float] = []
     private var silenceRun = 0
     private var speaking = false
@@ -68,10 +73,12 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private var busy = false
     private var loggedFirstAudio = false
 
-    init(model: WhisperModel, modelURL: URL, speakers: SpeakerEmbeddingService? = nil) {
+    init(model: WhisperModel, modelURL: URL, speakers: SpeakerEmbeddingService? = nil,
+         expectedSpeakers: Int? = nil) {
         self.model = model
         self.modelURL = modelURL
         self.speakers = speakers
+        if let expectedSpeakers { clusterer.setMaximum(expectedSpeakers) }
     }
 
     deinit {
@@ -233,8 +240,15 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             // The voiceprint is computed from exactly the audio that produced
             // this line, so the label can never drift out of sync with it.
             var speaker: Int?
-            if let speakers, let embedding = speakers.embed(samples) {
-                speaker = self.clusterer.assign(embedding)
+            if let speakers {
+                let duration = Double(samples.count) / Double(Self.sampleRate)
+                if duration >= Self.minimumSpeakerAudio, let embedding = speakers.embed(samples) {
+                    speaker = self.clusterer.assign(embedding)
+                } else {
+                    // Too short to judge. Attributing it to whoever is already
+                    // talking is right far more often than inventing a speaker.
+                    speaker = self.clusterer.inheritLastSpeaker()
+                }
             }
 
             let seconds = Double(samples.count) / Double(Self.sampleRate)
