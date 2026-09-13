@@ -87,7 +87,7 @@ func render(scale: CGFloat) -> NSBitmapImageRep {
     }
 
     draw("Drag Relay into Applications", size: 15, weight: .medium, alpha: 0.82, centerY: 318)
-    draw("Then open it from the menu bar", size: 12.5, weight: .regular, alpha: 0.45, centerY: 342)
+    draw("Then open it. Relay lives in your menu bar.", size: 12.5, weight: .regular, alpha: 0.45, centerY: 342)
 
     ctx.restoreGState()
     NSGraphicsContext.restoreGraphicsState()
