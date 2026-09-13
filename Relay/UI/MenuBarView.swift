@@ -106,7 +106,7 @@ struct MenuBarView: View {
         }
 
         if appState.status == .permissionRequired {
-            Button("Open System Settings") { appState.openScreenRecordingSettings() }
+            Button("Open System Settings") { appState.openAudioSettings() }
                 .buttonStyle(.borderless)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(RelayTheme.accent)

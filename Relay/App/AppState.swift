@@ -273,16 +273,6 @@ final class AppState: ObservableObject {
         errorDetail = nil
         needsRelaunch = false
 
-        guard SystemAudioCaptureService.hasPermission else {
-            status = .requestingPermission
-            SystemAudioCaptureService.requestPermission()
-            status = .permissionRequired
-            errorDetail = "Relay needs Screen Recording permission to hear your Mac. "
-                + "Grant it in System Settings, then quit and reopen Relay."
-            needsRelaunch = true
-            Log.error(.app, "Screen Recording permission not granted")
-            return
-        }
 
         // Every engine needs its key before anything starts, so a missing one
         // fails immediately rather than half-way through a comparison.
@@ -552,8 +542,8 @@ final class AppState: ObservableObject {
         }
     }
 
-    func openScreenRecordingSettings() {
-        SystemAudioCaptureService.openScreenRecordingSettings()
+    func openAudioSettings() {
+        SystemAudioCaptureService.openAudioSettings()
     }
 
     // MARK: - Translation output
@@ -594,7 +584,9 @@ final class AppState: ObservableObject {
 
         if let kind, case CaptureError.permissionDenied = kind {
             status = .permissionRequired
-            needsRelaunch = true
+            errorDetail = "Relay needs permission to hear your Mac's audio. "
+                + "Allow it in System Settings, then press start again."
+            needsRelaunch = false
         } else {
             status = .error(message)
         }

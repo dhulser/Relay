@@ -26,6 +26,8 @@
 	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Relay reads the audio your Mac is playing so it can put translated subtitles on screen. It never listens to your microphone.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
 </dict>

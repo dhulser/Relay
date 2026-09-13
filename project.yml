@@ -31,6 +31,7 @@ targets:
       path: Relay/Info.plist
       properties:
         CFBundleIconFile: Relay
+        NSAudioCaptureUsageDescription: Relay reads the audio your Mac is playing so it can put translated subtitles on screen. It never listens to your microphone.
         CFBundleName: Relay
         CFBundleDisplayName: Live Translator
         # Menu-bar-only app: no Dock icon, no main window.
