@@ -19,6 +19,11 @@ struct MenuBarView: View {
         }
         .padding(16)
         .frame(width: 300)
+        .animation(.easeOut(duration: 0.2), value: appState.stats.justDiscovered)
+        .onDisappear {
+            // Seen it. Next time the popover opens, show the usual list.
+            appState.stats.acknowledgeDiscovery()
+        }
     }
 
     // MARK: - Pieces
@@ -131,7 +136,20 @@ struct MenuBarView: View {
             }
             .padding(.top, 12)
 
-            if let languages = appState.stats.languagesText {
+            if let discovered = appState.stats.justDiscovered {
+                // Only ever a small remark. It is the first time you have heard
+                // a language through Relay, which is worth a line and nothing
+                // more.
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("First time hearing \(discovered)")
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(RelayTheme.accent)
+                .padding(.top, 6)
+                .transition(.opacity)
+            } else if let languages = appState.stats.languagesText {
                 Text(languages)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.tertiary)

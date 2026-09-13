@@ -80,13 +80,76 @@ final class TranslationStatsTests: XCTestCase {
         XCTAssertEqual(stats.listeningText, "under a minute", "a blink is not a minute")
     }
 
+    // MARK: - Breakdown, records and discoveries
+
+    func testWordsAreAttributedToTheirLanguage() {
+        stats.record(line: "one two three", language: "es")
+        stats.record(line: "four five", language: "es")
+        stats.record(line: "six", language: "fr")
+
+        XCTAssertEqual(stats.wordsByLanguage["es"], 5)
+        XCTAssertEqual(stats.wordsByLanguage["fr"], 1)
+        XCTAssertEqual(stats.words, 6, "the overall total still counts everything")
+    }
+
+    /// The breakdown leads with whatever you listen to most.
+    func testBreakdownIsOrderedByVolume() {
+        stats.record(line: "one", language: "fr")
+        stats.record(line: "one two three four", language: "es")
+        stats.record(line: "one two", language: "ja")
+
+        let order = stats.breakdown.map(\.language)
+        XCTAssertEqual(order, ["Spanish", "Japanese", "French"])
+    }
+
+    /// Realtime reports no language, so those words count towards the total
+    /// without inventing a language for the breakdown.
+    func testWordsWithoutALanguageStillCount() {
+        stats.record(line: "one two three")
+        XCTAssertEqual(stats.words, 3)
+        XCTAssertTrue(stats.breakdown.isEmpty)
+    }
+
+    func testBestDayTracksTheRunningTotal() {
+        XCTAssertNil(stats.bestDayText, "no record before anything is translated")
+
+        stats.record(line: "one two three")
+        XCTAssertEqual(stats.bestDayWords, 3)
+
+        stats.record(line: "four five")
+        XCTAssertEqual(stats.bestDayWords, 5, "the record grows as the day does")
+        XCTAssertNotNil(stats.bestDayText)
+    }
+
+    /// Hearing something new is worth a remark, but only the first time.
+    func testFirstTimeHearingALanguageIsNoted() {
+        XCTAssertNil(stats.justDiscovered)
+
+        stats.record(language: "ja")
+        XCTAssertEqual(stats.justDiscovered, "Japanese")
+
+        stats.acknowledgeDiscovery()
+        XCTAssertNil(stats.justDiscovered)
+
+        stats.record(language: "ja")
+        XCTAssertNil(stats.justDiscovered, "already heard, so not a discovery")
+    }
+
+    func testUnknownLanguageIsNotADiscovery() {
+        stats.record(language: "xx")
+        XCTAssertNil(stats.justDiscovered)
+    }
+
     func testResetClearsEverything() {
-        stats.record(line: "some words here")
+        stats.record(line: "some words here", language: "es")
         stats.record(language: "es")
         stats.reset()
 
         XCTAssertEqual(stats.words, 0)
         XCTAssertTrue(stats.languages.isEmpty)
+        XCTAssertTrue(stats.breakdown.isEmpty)
+        XCTAssertEqual(stats.bestDayWords, 0)
+        XCTAssertNil(stats.bestDayText)
         XCTAssertFalse(stats.hasAnything)
     }
 }

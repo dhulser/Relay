@@ -151,11 +151,26 @@ struct SettingsView: View {
                 Text(appState.stats.listeningText)
                     .foregroundStyle(.secondary)
             }
-            if let languages = appState.stats.languagesText {
-                LabeledContent("Languages heard") {
-                    Text(languages)
-                        .foregroundStyle(.secondary)
+            if let best = appState.stats.bestDayText {
+                LabeledContent("Busiest day") {
+                    Text(best).foregroundStyle(.secondary)
                 }
+            }
+
+            if !appState.stats.breakdown.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(appState.stats.breakdown, id: \.language) { entry in
+                        HStack {
+                            Text(entry.language)
+                            Spacer()
+                            Text("\(entry.words)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.system(size: 12.5))
+                .padding(.vertical, 2)
             }
 
             HStack {

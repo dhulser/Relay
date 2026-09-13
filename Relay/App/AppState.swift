@@ -254,9 +254,9 @@ final class AppState: ObservableObject {
         let stream: SubtitleStream
         var translator: TextTranslating?
         var realtime: OpenAIRealtimeService?
-        /// Speakers waiting between recognition and translation, so a label
-        /// stays with the line it came from.
-        var pendingSpeakers: [Int?] = []
+        /// What is waiting between recognition and translation, so a label and
+        /// a language stay with the line they came from.
+        var pending: [(speaker: Int?, language: String?)] = []
     }
 
     /// Which engines this session will run. One normally; several when
@@ -351,10 +351,8 @@ final class AppState: ObservableObject {
             if candidate == .openaiRealtime {
                 let engine = OpenAIRealtimeService()
                 try engine.start(source: sourceLanguage, target: targetLanguage)
-                var lane = Lane(provider: candidate, stream: stream, realtime: engine)
                 wire(realtime: engine, to: stream, comparing: comparing)
-                built.append(lane)
-                lane.pendingSpeakers = []
+                built.append(Lane(provider: candidate, stream: stream, realtime: engine))
             } else {
                 built.append(Lane(provider: candidate, stream: stream,
                                   translator: try makeTranslator(for: candidate)))
@@ -399,7 +397,7 @@ final class AppState: ObservableObject {
     private func distribute(_ result: TranscriptionResult) {
         stats.record(language: result.languageCode)
         for index in lanes.indices where lanes[index].translator != nil {
-            lanes[index].pendingSpeakers.append(result.speaker)
+            lanes[index].pending.append((result.speaker, result.languageCode))
             lanes[index].translator?.translate(result.text)
         }
     }
@@ -411,18 +409,19 @@ final class AppState: ObservableObject {
         translator.onPartial = { [weak self] text in
             MainActor.assumeIsolated {
                 guard let self, laneIndex < self.lanes.count else { return }
-                stream.manager.updatePartial(text, speaker: self.lanes[laneIndex].pendingSpeakers.first ?? nil)
+                stream.manager.updatePartial(text, speaker: self.lanes[laneIndex].pending.first?.speaker ?? nil)
             }
         }
         translator.onFinal = { [weak self] text in
             MainActor.assumeIsolated {
                 guard let self, laneIndex < self.lanes.count else { return }
-                let speaker = self.lanes[laneIndex].pendingSpeakers.isEmpty
-                    ? nil : self.lanes[laneIndex].pendingSpeakers.removeFirst()
-                stream.manager.complete(text, speaker: speaker)
+                let waiting = self.lanes[laneIndex].pending.isEmpty
+                    ? (speaker: Int?.none, language: String?.none)
+                    : self.lanes[laneIndex].pending.removeFirst()
+                stream.manager.complete(text, speaker: waiting.speaker)
                 // Only the first lane counts, otherwise a comparison would
                 // tally the same speech once per engine.
-                if laneIndex == 0 { self.stats.record(line: text) }
+                if laneIndex == 0 { self.stats.record(line: text, language: waiting.language) }
                 if comparing { Log.info(.compare, "[\(label)] \(text)") }
             }
         }
