@@ -1,0 +1,393 @@
+<title>Relay for Mac</title>
+<meta name="description" content="Live subtitles for anything playing on your Mac.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Nunito:wght@600;700&display=swap">
+
+<style>
+  :root {
+    --paper: #F6F6F9;
+    --raise: #FFFFFF;
+    --ink: #191A22;
+    --muted: #6A6C7D;
+    --faint: #90929F;
+    --line: #E3E3EB;
+    --accent: #5B63D3;
+    --accent-ink: #4149C0;
+    --plate: #2B2C33;
+    --plate-ink: #F2F2F6;
+    --green: #59A97A;
+    --blue: #5C8FD6;
+    --shadow: 0 1px 2px rgba(25, 26, 34, .05), 0 12px 32px rgba(25, 26, 34, .07);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #121319;
+      --raise: #1A1B23;
+      --ink: #ECECF1;
+      --muted: #9496A6;
+      --faint: #6E7080;
+      --line: #272835;
+      --accent: #7B83E8;
+      --accent-ink: #9AA0F0;
+      --plate: #23242B;
+      --plate-ink: #F2F2F6;
+      --green: #77C398;
+      --blue: #7FA9E6;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 14px 36px rgba(0, 0, 0, .35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #121319;
+    --raise: #1A1B23;
+    --ink: #ECECF1;
+    --muted: #9496A6;
+    --faint: #6E7080;
+    --line: #272835;
+    --accent: #7B83E8;
+    --accent-ink: #9AA0F0;
+    --plate: #23242B;
+    --plate-ink: #F2F2F6;
+    --green: #77C398;
+    --blue: #7FA9E6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 14px 36px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 17px/1.6 Archivo, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- masthead ---------- */
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 34px 0 0;
+  }
+  .mark { width: 26px; height: 26px; border-radius: 7px; display: block; }
+  .wordmark { font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+  header .spacer { flex: 1; }
+  header a {
+    color: var(--muted); text-decoration: none; font-size: 14.5px;
+  }
+  header a:hover { color: var(--ink); }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 76px 0 12px; }
+  h1 {
+    font-size: clamp(38px, 6.2vw, 60px);
+    line-height: 1.04;
+    letter-spacing: -.033em;
+    font-weight: 700;
+    margin: 0 0 22px;
+    text-wrap: balance;
+    max-width: 15ch;
+  }
+  .lede {
+    font-size: 19.5px; color: var(--muted); margin: 0 0 34px;
+    max-width: 54ch;
+  }
+  .lede strong { color: var(--ink); font-weight: 500; }
+
+  .actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .download {
+    display: inline-flex; align-items: center; gap: 9px;
+    background: var(--accent); color: #fff; text-decoration: none;
+    font-weight: 600; font-size: 16px;
+    padding: 13px 22px; border-radius: 11px;
+    transition: background .15s ease, transform .15s ease;
+  }
+  .download:hover { background: var(--accent-ink); }
+  .download:active { transform: translateY(1px); }
+  .download:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 3px; }
+  .terms { color: var(--faint); font-size: 14.5px; }
+
+  /* ---------- the caption plate, the product's own voice ---------- */
+  .stage { padding: 52px 0 8px; }
+  .plate {
+    background: var(--plate);
+    border-radius: 15px;
+    padding: 22px 26px;
+    box-shadow: var(--shadow);
+    font-family: Nunito, -apple-system, sans-serif;
+  }
+  .plate .said {
+    font-size: 13px; color: var(--faint);
+    font-family: Archivo, sans-serif; letter-spacing: .04em; text-transform: uppercase;
+    margin-bottom: 9px;
+  }
+  .plate .line {
+    font-size: clamp(20px, 3vw, 27px); font-weight: 700; line-height: 1.32;
+    color: var(--plate-ink);
+    min-height: 2.64em;
+    transition: opacity .32s ease;
+  }
+  .plate .line.fading { opacity: 0; }
+  .plate .prev { color: rgba(242, 242, 246, .42); font-weight: 600; }
+  .caption-note { color: var(--faint); font-size: 14.5px; margin: 14px 0 0; }
+
+  /* ---------- sections ---------- */
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; }
+  h2 {
+    font-size: 27px; font-weight: 600; letter-spacing: -.02em;
+    margin: 0 0 14px; text-wrap: balance;
+  }
+  section > p { color: var(--muted); margin: 0 0 26px; max-width: 62ch; }
+  section > p strong { color: var(--ink); font-weight: 500; }
+
+  .points { display: grid; gap: 30px; grid-template-columns: 1fr 1fr; margin-top: 8px; }
+  .points h3 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+  .points p { margin: 0; color: var(--muted); font-size: 16px; }
+  @media (max-width: 620px) { .points { grid-template-columns: 1fr; } }
+
+  figure { margin: 30px 0 0; }
+  figure img {
+    display: block; width: 100%; height: auto;
+    border-radius: 12px;
+  }
+  figcaption { color: var(--faint); font-size: 14.5px; margin-top: 12px; }
+
+  .shot-light img {
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    border-radius: 12px;
+  }
+
+  /* ---------- setup ---------- */
+  .steps { display: grid; gap: 22px; margin: 4px 0 0; padding: 0; list-style: none; }
+  .steps li {
+    display: grid; grid-template-columns: 22px 1fr; gap: 14px; align-items: start;
+  }
+  .steps .n {
+    font-size: 14px; font-weight: 600; color: var(--accent);
+    font-variant-numeric: tabular-nums; padding-top: 2px;
+  }
+  .steps h3 { font-size: 16.5px; font-weight: 600; margin: 0 0 3px; }
+  .steps p { margin: 0; color: var(--muted); font-size: 16px; }
+
+  /* ---------- cost table ---------- */
+  .costs { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 16px; }
+  .costs th, .costs td { text-align: left; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .costs th {
+    font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--faint); font-weight: 600;
+  }
+  .costs td:last-child, .costs th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .costs .who { font-weight: 500; }
+
+  /* ---------- close ---------- */
+  .close { text-align: left; padding: 76px 0 24px; border-top: 1px solid var(--line); }
+  footer {
+    padding: 0 0 64px; color: var(--faint); font-size: 14.5px;
+    display: flex; gap: 18px; flex-wrap: wrap;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="#5B63D3"/>
+      <g fill="#fff" opacity=".95">
+        <rect x="6"  y="13.5" width="2.6" height="5"   rx="1.3"/>
+        <rect x="10.4" y="10.5" width="2.6" height="11"  rx="1.3"/>
+        <rect x="14.8" y="7.5"  width="2.6" height="17"  rx="1.3"/>
+        <rect x="19.2" y="10.5" width="2.6" height="11"  rx="1.3"/>
+        <rect x="23.6" y="13.5" width="2.6" height="5"   rx="1.3"/>
+      </g>
+    </svg>
+    <span class="wordmark">Relay</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/dhulser/Relay">Source</a>
+  </header>
+
+  <div class="hero">
+    <h1>Subtitles for whatever your Mac is playing.</h1>
+    <p class="lede">
+      A Spanish documentary. A call where half the room switches to French. A voice note
+      from someone in São Paulo. Relay listens to your Mac and puts
+      <strong>readable English on screen while it plays</strong>.
+    </p>
+    <div class="actions">
+      <a class="download" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">
+        Download for Mac
+      </a>
+      <span class="terms">Free &middot; Apple Silicon &middot; macOS 15 or later</span>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="plate">
+      <div class="said" id="said">Hearing Spanish</div>
+      <div class="line" id="line">
+        <div class="prev" id="prev">So I'll send the report over tomorrow morning,</div>
+        <div id="now">before anyone gets into the meeting.</div>
+      </div>
+    </div>
+    <p class="caption-note">The overlay sits above everything, including full-screen video. Drag it anywhere.</p>
+  </div>
+
+  <section>
+    <h2>It listens to your Mac, not your microphone</h2>
+    <p>
+      Whatever is coming out of your speakers is what Relay reads — a browser tab, a video call,
+      a file on your desktop. Nothing is recorded, and the audio keeps playing normally while
+      you read along.
+    </p>
+
+    <div class="points">
+      <div>
+        <h3>Knows who is speaking</h3>
+        <p>Tags each line with the voice that said it, so a conversation stays readable when people talk over each other.</p>
+      </div>
+      <div>
+        <h3>Follows the language</h3>
+        <p>Works out what is being spoken as it goes. If the room switches from Spanish to French, the subtitles keep up.</p>
+      </div>
+      <div>
+        <h3>Stays where you put it</h3>
+        <p>Drag the captions anywhere on screen. They never steal focus, and they sit above full-screen apps.</p>
+      </div>
+      <div>
+        <h3>Nine languages</h3>
+        <p>Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese and English, in any direction.</p>
+      </div>
+    </div>
+
+    <figure>
+      <img src="assets/subtitles.png" alt="Relay's subtitle overlay showing a two-person conversation, each speaker's lines in their own colour." width="1656" height="404">
+      <figcaption>Two speakers, told apart by voice and coloured accordingly.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Setting it up</h2>
+    <ol class="steps">
+      <li>
+        <span class="n">1</span>
+        <div>
+          <h3>Move Relay to Applications</h3>
+          <p>It lives in the menu bar. There is no window to keep track of.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <div>
+          <h3>Paste in a key</h3>
+          <p>Relay uses your own Anthropic or OpenAI account for the translation, so you pay them directly and nothing goes through us. The key is kept in your Keychain.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <div>
+          <h3>Press Start listening</h3>
+          <p>macOS will ask once for permission to hear your Mac. Then play something.</p>
+        </div>
+      </li>
+    </ol>
+
+    <figure class="shot-light">
+      <img src="assets/menubar.png" alt="Relay's menu bar panel, showing the language it is translating to and a Start listening button." width="1200" height="944">
+      <figcaption>The whole app. Pick a language, press start.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Your audio stays on your Mac</h2>
+    <p>
+      Speech is turned into text on your own machine — that part never touches a network.
+      Only the words are sent off for translating, and only to the account you bring.
+      <strong>No recordings, no transcripts kept, no account to make.</strong>
+    </p>
+
+    <table class="costs">
+      <thead>
+        <tr><th>Translating with</th><th>Roughly</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="who">OpenAI</td><td>4&cent; an hour</td></tr>
+        <tr><td class="who">Claude</td><td>19&cent; an hour</td></tr>
+        <tr><td class="who">OpenAI Realtime</td><td>$2.04 an hour</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:16px; font-size:15.5px;">
+      The first two recognise speech on your Mac and send only text. Realtime streams the
+      audio itself to OpenAI, which is faster — words appear mid-sentence rather than at
+      the end — and costs accordingly.
+    </p>
+  </section>
+
+  <section>
+    <h2>Not sure which to use? Run them side by side.</h2>
+    <p>
+      Relay can run two at once on the same audio and show you both, so you can watch
+      them keep up — or not — and decide with your own eyes.
+    </p>
+    <figure>
+      <img src="assets/comparison.png" alt="Two columns of subtitles from different translation engines, running on the same audio." width="1800" height="252">
+      <figcaption>The same sentence, arriving twice.</figcaption>
+    </figure>
+  </section>
+
+  <div class="close">
+    <h2 style="font-size:31px; margin-bottom:18px;">Try it on something you couldn't watch before.</h2>
+    <div class="actions">
+      <a class="download" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">
+        Download for Mac
+      </a>
+      <span class="terms">Free &middot; Apple Silicon &middot; macOS 15 or later</span>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://github.com/dhulser/Relay">Source on GitHub</a>
+    <a href="https://github.com/dhulser/Relay/issues">Report a problem</a>
+    <span>Made in Durham, NC</span>
+  </footer>
+</div>
+
+<script>
+  // The hero plate performs the product: a line of speech resolving into
+  // English, the way it does on screen.
+  const exchanges = [
+    { said: "Hearing Spanish", prev: "So I'll send the report over tomorrow morning,", now: "before anyone gets into the meeting." },
+    { said: "Hearing French",  prev: "That works for me —",                             now: "could we push it to Thursday instead?" },
+    { said: "Hearing Japanese", prev: "Thursday is fine.",                              now: "I'll let the rest of the team know." },
+    { said: "Hearing Portuguese", prev: "One more thing before we finish —",            now: "has anyone looked at the numbers from June?" }
+  ];
+
+  const said = document.getElementById('said');
+  const line = document.getElementById('line');
+  const prev = document.getElementById('prev');
+  const now = document.getElementById('now');
+
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!still) {
+    let index = 0;
+    setInterval(() => {
+      line.classList.add('fading');
+      setTimeout(() => {
+        index = (index + 1) % exchanges.length;
+        const next = exchanges[index];
+        said.textContent = next.said;
+        prev.textContent = next.prev;
+        now.textContent = next.now;
+        line.classList.remove('fading');
+      }, 340);
+    }, 3600);
+  }
+</script>
