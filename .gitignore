@@ -12,3 +12,5 @@ DerivedData/
 # Release artifacts
 dist/
 dist-site/
+build-strict/
+build-*/
