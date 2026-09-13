@@ -71,20 +71,18 @@ final class OpenAITextTranslator: TextTranslating {
             }
 
             var translation = ""
-            for try await line in bytes.lines {
+            reading: for try await line in bytes.lines {
                 guard !Task.isCancelled else { return }
-                guard line.hasPrefix("data: ") else { continue }
-
-                let payload = line.dropFirst(6)
-                if payload == "[DONE]" { break }
-
-                guard let event = try? JSONDecoder().decode(
-                    ChatCompletionChunk.self, from: Data(payload.utf8)
-                ), let chunk = event.choices.first?.delta.content, !chunk.isEmpty else { continue }
-
-                translation += chunk
-                let running = translation
-                await MainActor.run { self.onPartial?(running) }
+                switch Self.interpret(line) {
+                case .text(let chunk):
+                    translation += chunk
+                    let running = translation
+                    await MainActor.run { self.onPartial?(running) }
+                case .done:
+                    break reading
+                case .nothing:
+                    continue
+                }
             }
 
             let final = translation.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,6 +95,24 @@ final class OpenAITextTranslator: TextTranslating {
             guard !Task.isCancelled else { return }
             Log.error(.openai, "Request failed: \(error.localizedDescription)")
         }
+    }
+
+    /// What one line of the SSE stream means to us.
+    enum Signal: Equatable {
+        case text(String)
+        case done
+        case nothing
+    }
+
+    /// Pure, so the wire handling can be tested without a network.
+    static func interpret(_ line: String) -> Signal {
+        guard line.hasPrefix("data: ") else { return .nothing }
+        let payload = line.dropFirst(6)
+        if payload == "[DONE]" { return .done }
+        guard let event = try? JSONDecoder().decode(ChatCompletionChunk.self, from: Data(payload.utf8)),
+              let chunk = event.choices.first?.delta.content, !chunk.isEmpty
+        else { return .nothing }
+        return .text(chunk)
     }
 
     private func handleHTTPError(status: Int, bytes: URLSession.AsyncBytes) async {

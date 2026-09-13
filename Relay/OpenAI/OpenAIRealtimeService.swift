@@ -15,6 +15,9 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     var onPartialTranslation: ((String, Int?) -> Void)?
     var onFinalTranslation: ((String, Int?) -> Void)?
     var onFatalError: ((String) -> Void)?
+    /// The source-language transcript, as it is heard. Whole utterance so far
+    /// on each delta, then the finished text.
+    var onSourceTranscript: ((String) -> Void)?
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -35,6 +38,8 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     /// The utterance being spoken right now, accumulated from deltas so the
     /// engine emits whole-utterance text rather than fragments.
     private var currentUtterance = ""
+    /// What the transcription model has heard of the current utterance.
+    private var currentSource = ""
 
     private let converter = AudioConverter(target: AudioConverter.openAIRealtimeFormat)
 
@@ -73,6 +78,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
             self.shouldRun = true
             self.reconnectAttempt = 0
             self.currentUtterance = ""
+            self.currentSource = ""
             self.pendingChunk.removeAll(keepingCapacity: true)
             self.chunksSent = 0
             self.converter.reset()
@@ -241,8 +247,16 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
             guard !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(final, nil) }
 
-        case .sourceTranscript:
-            break // source-language captions aren't part of v1
+        case .sourceTranscriptDelta(let text):
+            currentSource += text
+            let heard = currentSource
+            DispatchQueue.main.async { [weak self] in self?.onSourceTranscript?(heard) }
+
+        case .sourceTranscript(let text):
+            let heard = text.isEmpty ? currentSource : text
+            currentSource = ""
+            guard !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            DispatchQueue.main.async { [weak self] in self?.onSourceTranscript?(heard) }
 
         case .speechStarted:
             Log.info(.realtime, "Speech started")
@@ -287,12 +301,12 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(chunk, nil) }
     }
 
-    private static let maximumLineCharacters = 160
+    static let maximumLineCharacters = 160
 
     /// Index just past the end of the first complete sentence, or nil.
     /// A terminator must be followed by whitespace so decimals and initials
     /// ("3.5", "J. Smith") don't split a line.
-    private static func sentenceEnd(in text: String) -> String.Index? {
+    static func sentenceEnd(in text: String) -> String.Index? {
         let terminators: Set<Character> = [".", "!", "?", "\u{2026}", "\u{3002}", "\u{FF01}", "\u{FF1F}"]
         var index = text.startIndex
         while index < text.endIndex {

@@ -7,6 +7,13 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+packages:
+  # In-app updates. The appcast is published alongside each GitHub release;
+  # scripts/release.sh signs it with the EdDSA key generate_keys created.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.0
+
 targets:
   Relay:
     type: application
@@ -22,6 +29,7 @@ targets:
       - framework: Vendor/sherpa/sherpa-onnx.xcframework
         embed: true
         codeSign: true
+      - package: Sparkle
     entitlements:
       path: Relay/Relay.entitlements
       properties:
@@ -31,7 +39,11 @@ targets:
       path: Relay/Info.plist
       properties:
         CFBundleIconFile: Relay
-        NSAudioCaptureUsageDescription: Relay reads the audio your Mac is playing so it can put translated subtitles on screen. It never listens to your microphone.
+        NSAudioCaptureUsageDescription: Relay reads the audio your Mac is playing so it can put translated subtitles on screen.
+        NSMicrophoneUsageDescription: Relay only listens to your microphone when you choose it as the source, to subtitle a conversation in the room.
+        SUFeedURL: https://github.com/dhulser/Relay/releases/latest/download/appcast.xml
+        SUPublicEDKey: cngR4yoPAQbZOXdYFHNfLSV+LqkW0jaazcaOjVwUATc=
+        SUEnableInstallerLauncherService: false
         CFBundleName: Relay
         CFBundleDisplayName: Relay
         CFBundleShortVersionString: $(MARKETING_VERSION)

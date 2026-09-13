@@ -88,29 +88,17 @@ final class ClaudeTranslator: TextTranslating {
             var translation = ""
             for try await line in bytes.lines {
                 guard !Task.isCancelled else { return }
-                guard line.hasPrefix("data: ") else { continue }
-
-                let payload = Data(line.dropFirst(6).utf8)
-                guard let event = try? JSONDecoder().decode(StreamEvent.self, from: payload) else { continue }
-
-                switch event.type {
-                case "content_block_delta":
-                    guard let chunk = event.delta?.text, !chunk.isEmpty else { continue }
+                switch Self.interpret(line) {
+                case .text(let chunk):
                     translation += chunk
                     let running = translation
                     await MainActor.run { self.onPartial?(running) }
-
-                case "message_delta":
-                    if event.delta?.stop_reason == "refusal" {
-                        Log.error(.claude, "Claude declined to translate this utterance")
-                    }
-
-                case "error":
-                    let message = event.error?.message ?? "Unknown API error"
+                case .refusal:
+                    Log.error(.claude, "Claude declined to translate this utterance")
+                case .error(let message):
                     Log.error(.claude, message)
                     if Self.isFatal(message) { await reportFatal(message) }
-
-                default:
+                case .nothing:
                     break
                 }
             }
@@ -150,10 +138,41 @@ final class ClaudeTranslator: TextTranslating {
         }
     }
 
-    private static func isFatal(_ message: String) -> Bool {
+    /// What one line of the SSE stream means to us.
+    enum Signal: Equatable {
+        case text(String)
+        case refusal
+        case error(String)
+        case nothing
+    }
+
+    /// Pure, so the wire handling can be tested without a network.
+    static func interpret(_ line: String) -> Signal {
+        guard line.hasPrefix("data: ") else { return .nothing }
+        let payload = Data(line.dropFirst(6).utf8)
+        guard let event = try? JSONDecoder().decode(StreamEvent.self, from: payload) else { return .nothing }
+
+        switch event.type {
+        case "content_block_delta":
+            guard let chunk = event.delta?.text, !chunk.isEmpty else { return .nothing }
+            return .text(chunk)
+        case "message_delta":
+            return event.delta?.stop_reason == "refusal" ? .refusal : .nothing
+        case "error":
+            return .error(event.error?.message ?? "Unknown API error")
+        default:
+            return .nothing
+        }
+    }
+
+    static func isFatal(_ message: String) -> Bool {
+        // Anthropic spells it "x-api-key" in the 401 body and "api key" in
+        // prose; both mean the key is wrong and retrying won't help.
         let lowered = message.lowercased()
         return lowered.contains("authentication")
             || lowered.contains("api key")
+            || lowered.contains("api-key")
+            || lowered.contains("api_key")
             || lowered.contains("permission")
             || lowered.contains("not_found")
     }

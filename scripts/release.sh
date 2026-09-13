@@ -1,8 +1,13 @@
 #!/bin/bash
 # Build, notarize, staple, and package Relay for distribution.
 #
-# Produces dist/Relay.dmg — a signed, notarized disk image that opens
-# on any Apple Silicon Mac without Gatekeeper warnings.
+# Produces dist/Relay.dmg — a signed, notarized disk image that opens on any
+# Apple Silicon Mac without Gatekeeper warnings — plus dist/appcast.xml for
+# Sparkle and dist/relay.rb for Homebrew. With --publish it also creates the
+# GitHub release the app's updater and the site's download button point at.
+#
+# Run it from a Terminal you can see: signing the disk image uses the key
+# directly and macOS asks permission the first time.
 #
 # One-time setup:
 #   1. A "Developer ID Application" certificate in your keychain
@@ -15,6 +20,7 @@
 set -euo pipefail
 
 PROFILE="${NOTARY_PROFILE:-notary}"
+PUBLISH=0; [ "${1:-}" = "--publish" ] && PUBLISH=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
 APP="$ROOT/build/Build/Products/Release/Relay.app"
@@ -57,6 +63,15 @@ esac
 xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 \
   || fail "No notarytool credential named '$PROFILE'. See the setup notes at the top of this script."
 echo "  ✓ notarytool credential '$PROFILE'"
+
+GENERATE_APPCAST="$(find "$ROOT/build/SourcePackages/artifacts" -name generate_appcast -type f 2>/dev/null | head -1 || true)"
+[ -n "$GENERATE_APPCAST" ] || fail "Sparkle's generate_appcast not found. Build once so the package resolves (xcodebuild -resolvePackageDependencies)."
+echo "  ✓ Sparkle tools"
+
+if [ "$PUBLISH" = 1 ]; then
+  gh auth status >/dev/null 2>&1 || fail "gh is not signed in; --publish needs it."
+  echo "  ✓ GitHub CLI"
+fi
 
 # ---------------------------------------------------------------- build
 step "Building Release"
@@ -155,5 +170,39 @@ case "$APP_CHECK" in
   *) fail "Gatekeeper would reject the app." ;;
 esac
 
+VERSION="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")"
+TAG="v$VERSION"
+
+# ---------------------------------------------------------------- appcast
+# Sparkle reads this from the latest release. Enclosure URLs point at the
+# versioned release, so an old appcast can never hand out the wrong build.
+step "Writing the Sparkle appcast"
+rm -f "$DIST"/*.xml "$DIST"/*.delta
+"$GENERATE_APPCAST" \
+  --download-url-prefix "https://github.com/dhulser/Relay/releases/download/$TAG/" \
+  -o "$DIST/appcast.xml" "$DIST" >/dev/null
+grep -q "sparkle:version" "$DIST/appcast.xml" || fail "generate_appcast produced no item."
+echo "  ✓ dist/appcast.xml ($TAG)"
+
+"$ROOT/scripts/cask.sh" "$DMG" | sed 's/^/  ✓ /'
+
 printf "\n\033[32m✓ %s (%s)\033[0m\n" "$DMG" "$(du -h "$DMG" | cut -f1)"
 printf "  Signed, notarized, and stapled. Opens on any Apple Silicon Mac.\n"
+
+# ---------------------------------------------------------------- publish
+if [ "$PUBLISH" = 1 ]; then
+  step "Publishing $TAG on GitHub"
+  if gh release view "$TAG" >/dev/null 2>&1; then
+    gh release upload "$TAG" "$DMG" "$DIST/appcast.xml" --clobber
+  else
+    gh release create "$TAG" "$DMG" "$DIST/appcast.xml" \
+      --title "Relay $VERSION" --generate-notes
+  fi
+  echo "  ✓ https://github.com/dhulser/Relay/releases/tag/$TAG"
+  echo
+  echo "  Homebrew: copy dist/relay.rb to Casks/relay.rb in dhulser/homebrew-relay and push."
+else
+  echo
+  echo "  To publish:  ./scripts/release.sh --publish"
+  echo "  (creates the $TAG release with Relay.dmg and appcast.xml attached)"
+fi

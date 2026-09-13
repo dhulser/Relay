@@ -69,6 +69,12 @@ struct MenuBarView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
+
+            if let summary = appState.listeningSummary {
+                Text(summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
@@ -184,6 +190,9 @@ struct MenuBarView: View {
         HStack(spacing: 14) {
             footerButton("Settings") { showSettings() }
             footerButton("Recenter") { appState.resetSubtitlePosition() }
+            if !appState.transcript.isEmpty {
+                footerButton("Save transcript") { appState.saveTranscript() }
+            }
             Spacer()
             footerButton("Quit") { NSApplication.shared.terminate(nil) }
         }

@@ -10,7 +10,11 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            GeneralSettingsView(updater: appState.updater)
+                .tabItem { Label("General", systemImage: "gearshape") }
+
             Form {
+                sourceSection
                 translationSection
                 languagesSection
                 tallySection
@@ -32,6 +36,26 @@ struct SettingsView: View {
             // ago — clear it rather than risk saving it under the new one.
             apiKeyField = ""
             isEnteringKey = false
+        }
+    }
+
+    // MARK: - Source
+
+    private var sourceSection: some View {
+        Section("Listen to") {
+            Picker("", selection: $appState.audioSource) {
+                ForEach(AudioSource.allCases) { Text($0.displayName).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(appState.audioSource.detail)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+
+            if appState.audioSource == .apps {
+                AppPickerList()
+            }
         }
     }
 
@@ -179,7 +203,7 @@ struct SettingsView: View {
                 Spacer()
             }
 
-            Text("Relay counts words and time. It never keeps what was said.")
+            Text("Relay counts words and time. What was said is never kept, unless you turn on the transcript in General.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
         }

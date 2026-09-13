@@ -1,5 +1,8 @@
-import Foundation
+import AppKit
 import Combine
+import Foundation
+import ServiceManagement
+import UniformTypeIdentifiers
 
 /// Languages offered in the source/target pickers, alphabetical by name.
 ///
@@ -272,7 +275,59 @@ final class AppState: ObservableObject {
         didSet { defaults.set(targetLanguage.rawValue, forKey: Self.targetKey) }
     }
 
+    /// Where the audio comes from: everything, chosen apps, or the microphone.
+    @Published var audioSource: AudioSource {
+        didSet { defaults.set(audioSource.rawValue, forKey: Self.audioSourceKey) }
+    }
+    /// Bundle identifiers of the apps to hear when `audioSource` is `.apps`.
+    @Published var chosenApps: Set<String> {
+        didSet { defaults.set(Array(chosenApps).sorted(), forKey: Self.chosenAppsKey) }
+    }
+    /// Run Silero VAD inside Whisper to drop music and noise from each phrase.
+    @Published var useVoiceFilter: Bool {
+        didSet { defaults.set(useVoiceFilter, forKey: Self.voiceFilterKey) }
+    }
+
+    /// Keep every finished line in memory while listening, so it can be saved.
+    /// Off by default: Relay's promise is that it keeps nothing unless asked.
+    @Published var keepTranscript: Bool {
+        didSet { defaults.set(keepTranscript, forKey: Self.keepTranscriptKey) }
+    }
+    /// The current transcript. Memory only; replaced at the next Start and
+    /// gone at quit, unless saved.
+    @Published private(set) var transcript: [TranscriptEntry] = []
+
+    /// ⌃⌥⌘R from any app.
+    @Published var shortcutEnabled: Bool {
+        didSet {
+            defaults.set(shortcutEnabled, forKey: Self.shortcutKey)
+            applyShortcut()
+        }
+    }
+    private var hotKey: GlobalHotKey?
+
+    /// Registered with launchd through SMAppService; macOS owns the truth, so
+    /// this reads it back rather than storing its own copy.
+    var launchAtLogin: Bool {
+        get { SMAppService.mainApp.status == .enabled }
+        set {
+            objectWillChange.send()
+            do {
+                if newValue { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            } catch {
+                Log.error(.app, "Launch at login: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    let updater = UpdaterService()
+
     private let defaults = UserDefaults.standard
+    private static let keepTranscriptKey = "keepTranscript"
+    private static let audioSourceKey = "audioSource"
+    private static let chosenAppsKey = "chosenAppBundleIDs"
+    private static let voiceFilterKey = "voiceActivityFilter"
+    private static let shortcutKey = "globalShortcut"
     private static let providerKey = "translationProvider"
     private static let modelKey = "claudeModel"
     private static let openAIModelKey = "openAIModel"
@@ -286,7 +341,10 @@ final class AppState: ObservableObject {
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
 
-    private let capture = SystemAudioCaptureService()
+    private let systemCapture = SystemAudioCaptureService()
+    private let microphoneCapture = MicrophoneCaptureService()
+    /// Whichever source the running session uses.
+    private var capture: AudioCapturing?
     private var lanes: [Lane] = []
 
     /// One recogniser shared by every local translator in the session.
@@ -313,18 +371,14 @@ final class AppState: ObservableObject {
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
+        keepTranscript = defaults.bool(forKey: Self.keepTranscriptKey)
+        shortcutEnabled = defaults.object(forKey: Self.shortcutKey) as? Bool ?? true
+        audioSource = defaults.string(forKey: Self.audioSourceKey).flatMap(AudioSource.init) ?? .systemAudio
+        chosenApps = Set(defaults.stringArray(forKey: Self.chosenAppsKey) ?? [])
+        useVoiceFilter = defaults.bool(forKey: Self.voiceFilterKey)
 
-        capture.onLevel = { [weak self] level in
-            MainActor.assumeIsolated { self?.audioLevel = level }
-        }
-        capture.onError = { [weak self] error in
-            MainActor.assumeIsolated { self?.fail(with: error.localizedDescription, kind: error) }
-        }
-        capture.onAudioBuffer = { [weak self] buffer in
-            guard let self else { return }
-            self.sharedTranscriber?.receive(buffer)
-            for lane in self.lanes { lane.realtime?.receive(buffer) }
-        }
+        attach(systemCapture)
+        attach(microphoneCapture)
 
         // A model finishing its download should turn "Needs the speech model"
         // into "Ready" without anyone reopening Settings.
@@ -336,9 +390,38 @@ final class AppState: ObservableObject {
 
         reconcileSourceLanguage()
         refreshReadiness()
+        applyShortcut()
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
             + "\(WhisperRuntime.languageCount) languages; "
             + "sherpa-onnx \(SpeakerRuntime.version)")
+    }
+
+    private func attach(_ source: AudioCapturing) {
+        source.onLevel = { [weak self] level in
+            MainActor.assumeIsolated { self?.audioLevel = level }
+        }
+        source.onError = { [weak self] error in
+            MainActor.assumeIsolated { self?.fail(with: error.localizedDescription, kind: error) }
+        }
+        source.onAudioBuffer = { [weak self] buffer in
+            guard let self else { return }
+            self.sharedTranscriber?.receive(buffer)
+            for lane in self.lanes { lane.realtime?.receive(buffer) }
+        }
+    }
+
+    /// The chosen apps that are open right now, by name, for the popover.
+    var listeningSummary: String? {
+        switch audioSource {
+        case .systemAudio:
+            return nil
+        case .microphone:
+            return "Listening to your microphone"
+        case .apps:
+            let open = ListenableApp.running.filter { chosenApps.contains($0.bundleID) }.map(\.name)
+            if open.isEmpty { return chosenApps.isEmpty ? "No apps chosen yet" : "None of the chosen apps is open" }
+            return "Listening to " + (open.count <= 2 ? open.joined(separator: " and ") : "\(open[0]), \(open[1]) and \(open.count - 2) more")
+        }
     }
 
     // MARK: - Session control
@@ -351,9 +434,9 @@ final class AppState: ObservableObject {
         let stream: SubtitleStream
         var translator: TextTranslating?
         var realtime: OpenAIRealtimeService?
-        /// What is waiting between recognition and translation, so a label and
-        /// a language stay with the line they came from.
-        var pending: [(speaker: Int?, language: String?)] = []
+        /// What is waiting between recognition and translation, so a label,
+        /// a language and the original words stay with the line they came from.
+        var pending: [(speaker: Int?, language: String?, original: String?)] = []
     }
 
     /// Which engines this session will run. One normally; several when
@@ -381,6 +464,28 @@ final class AppState: ObservableObject {
             return
         }
 
+        // Pick the source first: choosing apps that aren't open is the one
+        // mistake worth catching before anything else spins up.
+        let source: AudioCapturing
+        switch audioSource {
+        case .systemAudio:
+            systemCapture.scope = .everything
+            source = systemCapture
+        case .apps:
+            let pids = ListenableApp.running.filter { chosenApps.contains($0.bundleID) }.map(\.pid)
+            guard !pids.isEmpty else {
+                let message = CaptureError.noChosenAppRunning.localizedDescription
+                status = .error(message)
+                errorDetail = message
+                Log.error(.app, message)
+                return
+            }
+            systemCapture.scope = .apps(pids)
+            source = systemCapture
+        case .microphone:
+            source = microphoneCapture
+        }
+
         do {
             try buildLanes(for: providers)
         } catch let error as EngineError {
@@ -396,12 +501,14 @@ final class AppState: ObservableObject {
 
         SubtitleManager.setComparing(providers.count > 1)
         stats.beginSession()
+        transcript.removeAll()
         status = .connecting
         subtitlePanel.show(streams: lanes.map(\.stream), labelled: providers.count > 1)
 
+        capture = source
         Task {
             do {
-                try await capture.start()
+                try await source.start()
             } catch {
                 fail(with: error.localizedDescription, kind: error)
             }
@@ -415,7 +522,15 @@ final class AppState: ObservableObject {
         stats.endSession()
         teardownLanes()
         subtitlePanel.hide()
-        Task { await capture.stop() }
+        stopCapture()
+    }
+
+    /// Stops whichever source is running. The reference is taken first so a
+    /// Start that follows immediately cannot have its own source stopped.
+    private func stopCapture() {
+        guard let running = capture else { return }
+        capture = nil
+        Task { await running.stop() }
     }
 
     func toggle() {
@@ -485,8 +600,10 @@ final class AppState: ObservableObject {
     /// Hands one recognised utterance to every local translator at once.
     private func distribute(_ result: TranscriptionResult) {
         stats.record(language: result.languageCode)
+        let showOriginal = SubtitleStyle.shared.showOriginal
         for index in lanes.indices where lanes[index].translator != nil {
-            lanes[index].pending.append((result.speaker, result.languageCode))
+            lanes[index].pending.append((result.speaker, result.languageCode, result.text))
+            if showOriginal { lanes[index].stream.manager.setOriginal(result.text) }
             lanes[index].translator?.translate(result.text)
         }
     }
@@ -505,12 +622,16 @@ final class AppState: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, laneIndex < self.lanes.count else { return }
                 let waiting = self.lanes[laneIndex].pending.isEmpty
-                    ? (speaker: Int?.none, language: String?.none)
+                    ? (speaker: Int?.none, language: String?.none, original: String?.none)
                     : self.lanes[laneIndex].pending.removeFirst()
-                stream.manager.complete(text, speaker: waiting.speaker)
+                stream.manager.complete(text, speaker: waiting.speaker,
+                                        original: SubtitleStyle.shared.showOriginal ? waiting.original : nil)
                 // Only the first lane counts, otherwise a comparison would
                 // tally the same speech once per engine.
-                if laneIndex == 0 { self.stats.record(line: text, language: waiting.language) }
+                if laneIndex == 0 {
+                    self.stats.record(line: text, language: waiting.language)
+                    self.keep(translation: text, original: waiting.original, speaker: waiting.speaker)
+                }
                 if comparing { Log.content(.compare, "[\(label)] \(text)") }
             }
         }
@@ -532,11 +653,21 @@ final class AppState: ObservableObject {
         realtime.onPartialTranslation = { text, _ in
             MainActor.assumeIsolated { stream.manager.updatePartial(text) }
         }
+        realtime.onSourceTranscript = { text in
+            MainActor.assumeIsolated {
+                if SubtitleStyle.shared.showOriginal { stream.manager.setOriginal(text) }
+            }
+        }
         realtime.onFinalTranslation = { [weak self] text, _ in
             MainActor.assumeIsolated {
                 stream.manager.complete(text)
                 // Realtime only counts when it is the engine, not the rival.
-                if let self, self.lanes.first?.realtime != nil { self.stats.record(line: text) }
+                if let self, self.lanes.first?.realtime != nil {
+                    self.stats.record(line: text)
+                    // Realtime's source transcript is not aligned to its
+                    // translated sentences, so the transcript has no original.
+                    self.keep(translation: text, original: nil, speaker: nil)
+                }
                 if comparing { Log.content(.compare, "[\(label)] \(text)") }
             }
         }
@@ -593,11 +724,16 @@ final class AppState: ObservableObject {
                     + "Open Settings to download it."
                 )
             }
+            let vad = ModelStore.voiceActivity
+            if useVoiceFilter, !vad.isInstalled(.silero) {
+                Log.error(.whisper, "Voice filter is on but its model isn't downloaded; running without it")
+            }
             return WhisperTranscriptionService(
                 model: whisperModel,
                 modelURL: store.url(for: whisperModel),
                 speakers: makeSpeakerService(),
-                expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil)
+                expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil,
+                vadModelURL: useVoiceFilter && vad.isInstalled(.silero) ? vad.url(for: .silero) : nil)
         case .apple:
             guard #available(macOS 26.0, *) else {
                 throw EngineError.setupFailed(
@@ -623,6 +759,41 @@ final class AppState: ObservableObject {
             Log.error(.speakers, error.localizedDescription)
             return nil
         }
+    }
+
+    // MARK: - Transcript
+
+    private func keep(translation: String, original: String?, speaker: Int?) {
+        guard keepTranscript else { return }
+        transcript.append(TranscriptEntry(time: Date(), speaker: speaker, original: original, translation: translation))
+    }
+
+    /// Writes the in-memory transcript to a place the user chooses. This is
+    /// the only path by which anything said ever reaches disk.
+    func saveTranscript() {
+        guard !transcript.isEmpty else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = Transcript.suggestedFileName(for: transcript)
+        panel.canCreateDirectories = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try Transcript.text(for: transcript).write(to: url, atomically: true, encoding: .utf8)
+            Log.info(.app, "Transcript saved (\(transcript.count) lines)")
+        } catch {
+            Log.error(.app, "Could not save the transcript: \(error.localizedDescription)")
+        }
+    }
+
+    func discardTranscript() {
+        transcript.removeAll()
+    }
+
+    // MARK: - Shortcut
+
+    private func applyShortcut() {
+        hotKey = shortcutEnabled ? GlobalHotKey { [weak self] in self?.toggle() } : nil
     }
 
     // MARK: - Settings plumbing
@@ -656,8 +827,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The pane that matches the permission the current source needs.
     func openAudioSettings() {
-        SystemAudioCaptureService.openAudioSettings()
+        if audioSource == .microphone {
+            SystemAudioCaptureService.openMicrophoneSettings()
+        } else {
+            SystemAudioCaptureService.openAudioSettings()
+        }
     }
 
     // MARK: - Translation output
@@ -694,11 +870,15 @@ final class AppState: ObservableObject {
         stats.endSession()
         teardownLanes()
         subtitlePanel.hide()
-        Task { await capture.stop() }
+        stopCapture()
 
         if let kind, case CaptureError.permissionDenied = kind {
             status = .permissionRequired
             errorDetail = "Relay needs permission to hear your Mac's audio. "
+                + "Allow it in System Settings, then press start again."
+        } else if let kind, case CaptureError.microphoneDenied = kind {
+            status = .permissionRequired
+            errorDetail = "Relay needs permission to use your microphone. "
                 + "Allow it in System Settings, then press start again."
         } else {
             status = .error(message)

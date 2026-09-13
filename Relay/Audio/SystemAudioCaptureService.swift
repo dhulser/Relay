@@ -8,6 +8,10 @@ enum CaptureError: LocalizedError {
     case tapFailed(OSStatus)
     case deviceFailed(OSStatus)
     case unsupportedFormat
+    /// The user chose specific apps and none of them is running.
+    case noChosenAppRunning
+    /// The microphone source was chosen and permission was refused.
+    case microphoneDenied
     /// macOS ended the capture on the user's behalf. A deliberate stop, not a
     /// failure.
     case stoppedExternally
@@ -22,6 +26,10 @@ enum CaptureError: LocalizedError {
             return "Could not open the audio device (error \(status))."
         case .unsupportedFormat:
             return "The system audio format could not be read."
+        case .noChosenAppRunning:
+            return "None of the apps you chose is open. Open one, then press start again."
+        case .microphoneDenied:
+            return "Relay needs permission to use your microphone."
         case .stoppedExternally:
             return "Audio capture was stopped."
         }
@@ -37,7 +45,17 @@ enum CaptureError: LocalizedError {
 /// else, so neither of those is true any more.
 ///
 /// Nothing is written to disk; buffers live only long enough to hand off.
-final class SystemAudioCaptureService {
+final class SystemAudioCaptureService: AudioCapturing {
+
+    /// What the tap covers. Set before `start()`.
+    enum Scope {
+        case everything
+        /// Process IDs of the apps to hear. Helper processes those apps own
+        /// are included, since that is where browsers and Zoom actually
+        /// play their audio.
+        case apps([pid_t])
+    }
+    var scope: Scope = .everything
 
     /// Audio in whatever format the tap provides. Delivered on the capture
     /// queue, never on main.
@@ -66,6 +84,11 @@ final class SystemAudioCaptureService {
         // System audio capture lives under "Screen & System Audio Recording",
         // not Microphone. Privacy_AudioCapture is the anchor for that pane.
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!
+        NSWorkspace.shared.open(url)
+    }
+
+    static func openMicrophoneSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
         NSWorkspace.shared.open(url)
     }
 
@@ -105,9 +128,18 @@ final class SystemAudioCaptureService {
     // MARK: - Building the tap
 
     private func createTap() throws {
-        // Relay plays no audio of its own, so there is nothing to exclude and a
-        // global tap picks up everything the Mac is playing.
-        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        let description: CATapDescription
+        switch scope {
+        case .everything:
+            // Relay plays no audio of its own, so there is nothing to exclude
+            // and a global tap picks up everything the Mac is playing.
+            description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        case .apps(let pids):
+            let objects = Self.audioProcessObjects(belongingTo: pids)
+            guard !objects.isEmpty else { throw CaptureError.noChosenAppRunning }
+            Log.info(.audio, "Tapping \(objects.count) audio process(es) for \(pids.count) chosen app(s)")
+            description = CATapDescription(stereoMixdownOfProcesses: objects)
+        }
         description.uuid = UUID()
         description.name = "Relay"
         // muteBehavior is left at its default, CATapUnmuted. Leaving playback
@@ -205,6 +237,55 @@ final class SystemAudioCaptureService {
             Log.error(.audio, "AudioDeviceStart failed (\(started))")
             throw CaptureError.deviceFailed(started)
         }
+    }
+
+    // MARK: - Per-app scope
+
+    /// Every Core Audio process object whose process is one of `pids` or a
+    /// descendant of one. Chrome plays through a helper, Zoom through
+    /// CptHost; matching on ancestry catches both without a list of names.
+    static func audioProcessObjects(belongingTo pids: [pid_t]) -> [AudioObjectID] {
+        let chosen = Set(pids)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let system = AudioObjectID(kAudioObjectSystemObject)
+
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &objects) == noErr else { return [] }
+
+        return objects.filter { object in
+            guard let pid = processID(of: object) else { return false }
+            var current = pid
+            for _ in 0..<6 {
+                if chosen.contains(current) { return true }
+                guard let parent = parentProcessID(of: current), parent > 1 else { return false }
+                current = parent
+            }
+            return false
+        }
+    }
+
+    private static func processID(of object: AudioObjectID) -> pid_t? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyPID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var pid: pid_t = 0
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &pid) == noErr else { return nil }
+        return pid
+    }
+
+    private static func parentProcessID(of pid: pid_t) -> pid_t? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&name, UInt32(name.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return info.kp_eproc.e_ppid
     }
 
     // MARK: - Audio in

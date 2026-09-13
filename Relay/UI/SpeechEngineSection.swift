@@ -23,6 +23,17 @@ struct SpeechEngineSection: View {
                     }
                 }
                 modelStatus
+
+                Divider().padding(.vertical, 2)
+
+                Toggle("Filter out music and noise", isOn: $appState.useVoiceFilter)
+                if appState.useVoiceFilter {
+                    ModelDownloadRow(store: ModelStore.voiceActivity, model: .silero, label: "Voice filter model")
+                }
+                Text("Runs a small voice-activity model on each phrase first, so a soundtrack or a noisy room "
+                     + "doesn't get turned into words. Worth turning on if you see captions for things nobody said.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
             }
 
             if appState.canLabelSpeakers {
@@ -35,7 +46,7 @@ struct SpeechEngineSection: View {
                         Text("Detect automatically").tag(0)
                         ForEach(2...6, id: \.self) { Text("\($0) people").tag($0) }
                     }
-                    SpeakerModelRow()
+                    ModelDownloadRow(store: ModelStore.speaker, model: .campPlus, label: "Speaker model")
                 }
 
                 Text("Tags each line with the voice that said it. It can tell two voices apart, "

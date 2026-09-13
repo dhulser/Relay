@@ -93,6 +93,7 @@ enum RealtimeEventKind {
     case sessionReady
     case translatedDelta(String)
     case translatedCompleted(String)
+    case sourceTranscriptDelta(String)
     case sourceTranscript(String)
     case speechStarted
     case speechStopped
@@ -114,7 +115,9 @@ enum RealtimeEventKind {
         } else if type.hasSuffix("output_transcript.done") || type.hasSuffix("output_transcript.completed")
                     || type.hasSuffix("output_text.done") {
             self = .translatedCompleted(text)
-        } else if type.hasSuffix("input_transcript.delta") || type.hasSuffix("input_transcript.done") {
+        } else if type.hasSuffix("input_transcript.delta") {
+            self = .sourceTranscriptDelta(text)
+        } else if type.hasSuffix("input_transcript.done") || type.hasSuffix("input_transcript.completed") {
             self = .sourceTranscript(text)
         } else if type.hasSuffix("speech_started") {
             self = .speechStarted

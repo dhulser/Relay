@@ -22,6 +22,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
 
     private let model: WhisperModel
     private let modelURL: URL
+    /// Silero VAD weights, when the user turned the voice filter on and the
+    /// model is downloaded. Whisper then drops music and noise from each
+    /// phrase before transcribing it.
+    private let vadModelURL: URL?
 
     /// Optional voiceprint labelling. Nil when the user hasn't enabled it or
     /// the model isn't downloaded. Touched only on the inference queue.
@@ -45,8 +49,15 @@ final class WhisperTranscriptionService: SpeechTranscribing {
 
     private static let sampleRate = 16_000
     /// RMS below this counts as silence. System audio is digital and clean, so
-    /// this can sit low without picking up noise.
+    /// this can sit low without picking up noise. A noisier source raises the
+    /// effective threshold through `noiseFloor`.
     private static let silenceThreshold: Float = 0.006
+    /// Silence is judged at this multiple of the tracked noise floor, or the
+    /// fixed threshold, whichever is higher.
+    private static let floorMultiple: Float = 3
+    /// How fast the floor is allowed to creep back up, per 20 ms buffer, so a
+    /// room that gets louder is followed within ten seconds or so.
+    private static let floorRise: Float = 1.003
     /// How much quiet ends a phrase. Whisper is not a streaming model — it
     /// transcribes a finished chunk — so this pause *is* the latency floor for
     /// the local pipeline. Shorter feels live but fragments sentences; this is
@@ -85,15 +96,20 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private var speaking = false
     private var queued: [[Float]] = []
     private var busy = false
+    /// Quietest recent level. Digital silence takes it to zero, where the
+    /// fixed threshold applies exactly as before; a microphone in a room, or
+    /// a video with a soundtrack, lifts it so gaps between phrases still show.
+    private var noiseFloor: Float = 1
 
     private var language: Language?
     private var loggedFirstAudio = false
 
     init(model: WhisperModel, modelURL: URL, speakers: SpeakerEmbeddingService? = nil,
-         expectedSpeakers: Int? = nil) {
+         expectedSpeakers: Int? = nil, vadModelURL: URL? = nil) {
         self.model = model
         self.modelURL = modelURL
         self.speakers = speakers
+        self.vadModelURL = vadModelURL
         if let expectedSpeakers { clusterer.setMaximum(expectedSpeakers) }
     }
 
@@ -129,12 +145,14 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             silenceRun = 0
             speaking = false
             busy = false
+            noiseFloor = 1
         }
         loggedFirstAudio = false
         clusterer.reset()
 
         let mode = language.map { "fixed to \($0.displayName)" } ?? "auto-detecting"
-        Log.info(.whisper, "Loaded \(model.displayName) model, \(mode)")
+        let filter = vadModelURL == nil ? "" : ", voice filter on"
+        Log.info(.whisper, "Loaded \(model.displayName) model, \(mode)\(filter)")
     }
 
     func stop() async {
@@ -185,7 +203,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         let energy = Self.rms(samples)
 
         let captured: [Float]? = lock.withLock {
-            if energy >= Self.silenceThreshold {
+            noiseFloor = min(noiseFloor * Self.floorRise + 0.00001, energy)
+            let threshold = max(Self.silenceThreshold, noiseFloor * Self.floorMultiple)
+
+            if energy >= threshold {
                 speaking = true
                 silenceRun = 0
                 phrase.append(contentsOf: samples)
@@ -267,10 +288,17 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         // "auto" makes whisper identify the language itself; a fixed code
         // is more accurate when the user already knows it.
         let requested = self.language?.isoCode ?? "auto"
+        let vadPath = vadModelURL?.path ?? ""
         let status: Int32 = requested.withCString { languagePointer in
-            params.language = languagePointer
-            return samples.withUnsafeBufferPointer { audio in
-                whisper_full(context, params, audio.baseAddress, Int32(audio.count))
+            vadPath.withCString { vadPointer in
+                params.language = languagePointer
+                if !vadPath.isEmpty {
+                    params.vad = true
+                    params.vad_model_path = vadPointer
+                }
+                return samples.withUnsafeBufferPointer { audio in
+                    whisper_full(context, params, audio.baseAddress, Int32(audio.count))
+                }
             }
         }
 

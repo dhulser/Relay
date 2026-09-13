@@ -152,7 +152,7 @@ final class TranslationStats: ObservableObject {
     /// Japanese put no spaces between words, so there each Han, hiragana or
     /// katakana character counts as one; a rough measure, but far closer than
     /// calling a whole sentence a single word.
-    static func wordCount(in line: String) -> Int {
+    nonisolated static func wordCount(in line: String) -> Int {
         var count = 0
         for token in line.split(whereSeparator: { $0.isWhitespace || $0.isNewline }) {
             let ideographs = token.unicodeScalars.filter(Self.isUnspacedScript).count
@@ -161,7 +161,7 @@ final class TranslationStats: ObservableObject {
         return count
     }
 
-    private static func isUnspacedScript(_ scalar: Unicode.Scalar) -> Bool {
+    private nonisolated static func isUnspacedScript(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x3040...0x30FF,   // hiragana, katakana
              0x3400...0x4DBF,   // CJK extension A

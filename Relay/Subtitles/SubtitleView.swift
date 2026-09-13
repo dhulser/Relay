@@ -14,6 +14,8 @@ struct SubtitleView: View {
     /// panel down the screen.
     var onHeightChange: (CGFloat) -> Void = { _ in }
 
+    @ObservedObject private var style = SubtitleStyle.shared
+
     /// Wide enough for a full sentence, narrow enough to stay readable.
     static let maximumWidth: CGFloat = 760
     /// Each column while comparing — narrower, since there are several.
@@ -36,6 +38,13 @@ struct SubtitleView: View {
     ]
 
     static func colour(at index: Int) -> Color { palette[index % palette.count] }
+
+    init(streams: [SubtitleStream], labelled: Bool = false,
+         onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
+        self.streams = streams
+        self.labelled = labelled
+        self.onHeightChange = onHeightChange
+    }
 
     var body: some View {
         Group {
@@ -62,7 +71,7 @@ struct SubtitleView: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.black.opacity(0.72))
+                .fill(.black.opacity(style.plateOpacity))
         )
         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
         .padding(Self.margin)
@@ -71,9 +80,11 @@ struct SubtitleView: View {
     }
 }
 
-/// A normal session: large text, speaker labels, pause rules.
+/// A normal session: large text, speaker labels, pause rules, and the
+/// original words underneath when asked for.
 private struct SingleStreamView: View {
     @ObservedObject var manager: SubtitleManager
+    @ObservedObject private var style = SubtitleStyle.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -82,11 +93,16 @@ private struct SingleStreamView: View {
                 if line.startsNewTurn && line.speaker == nil && index > 0 { turnDivider }
                 label(line.speaker, showing: line.speaker != nil && line.speaker != previous, dimmed: true)
                 Text(line.text)
-                    .font(.system(size: 26, weight: .medium, design: .rounded))
+                    .font(mainFont)
                     .foregroundStyle(tint(line.speaker, dimmed: true))
+                if style.showOriginal, let original = line.original, original != line.text {
+                    Text(original)
+                        .font(smallFont)
+                        .foregroundStyle(.white.opacity(0.38))
+                }
             }
 
-            if !manager.current.isEmpty {
+            if !manager.current.isEmpty || manager.currentOriginal != nil {
                 let previous = manager.history.last?.speaker
                 if manager.currentStartsNewTurn && manager.currentSpeaker == nil && !manager.history.isEmpty {
                     turnDivider
@@ -94,20 +110,32 @@ private struct SingleStreamView: View {
                 label(manager.currentSpeaker,
                       showing: manager.currentSpeaker != nil && manager.currentSpeaker != previous,
                       dimmed: false)
-                Text(manager.current)
-                    .font(.system(size: 26, weight: .medium, design: .rounded))
-                    .foregroundStyle(tint(manager.currentSpeaker, dimmed: false))
+                if !manager.current.isEmpty {
+                    Text(manager.current)
+                        .font(mainFont)
+                        .foregroundStyle(tint(manager.currentSpeaker, dimmed: false))
+                }
+                // The original lands before its translation, so for a moment
+                // it is the only thing to show for this line.
+                if style.showOriginal, let original = manager.currentOriginal {
+                    Text(original)
+                        .font(smallFont)
+                        .foregroundStyle(.white.opacity(manager.current.isEmpty ? 0.7 : 0.5))
+                }
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    private var mainFont: Font { .system(size: style.textSize, weight: .medium, design: .rounded) }
+    private var smallFont: Font { .system(size: style.smallSize, weight: .medium, design: .rounded) }
+
     @ViewBuilder
     private func label(_ speaker: Int?, showing: Bool, dimmed: Bool) -> some View {
         if showing, let speaker {
             Text("Speaker \(speaker)")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: max(11, style.textSize * 0.5), weight: .semibold, design: .rounded))
                 .foregroundStyle(SubtitleView.colour(at: speaker - 1).opacity(dimmed ? 0.6 : 0.95))
                 .padding(.top, 4)
         }
@@ -133,6 +161,7 @@ private struct ColumnView: View {
     let stream: SubtitleStream
     let tint: Color
     @ObservedObject private var manager: SubtitleManager
+    @ObservedObject private var style = SubtitleStyle.shared
 
     init(stream: SubtitleStream, tint: Color) {
         self.stream = stream
@@ -150,13 +179,13 @@ private struct ColumnView: View {
 
             ForEach(manager.history) { line in
                 Text(line.text)
-                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .font(.system(size: style.columnSize, weight: .medium, design: .rounded))
                     .foregroundStyle(tint.opacity(0.55))
             }
 
             if !manager.current.isEmpty {
                 Text(manager.current)
-                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .font(.system(size: style.columnSize, weight: .medium, design: .rounded))
                     .foregroundStyle(tint)
             }
 
