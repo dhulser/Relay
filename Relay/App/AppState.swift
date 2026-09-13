@@ -119,6 +119,17 @@ final class AppState: ObservableObject {
         provider.usesLocalSpeech && speechEngine == .whisper
     }
 
+    /// Run the selected provider and OpenAI Realtime on the same audio at
+    /// once, labelling every line with the engine that produced it. For
+    /// judging which to use — not something to leave on, since it pays for
+    /// Realtime's hourly rate on top of the normal cost.
+    @Published var compareEngines: Bool {
+        didSet { defaults.set(compareEngines, forKey: Self.compareKey) }
+    }
+
+    /// Comparing needs a second, different engine to compare against.
+    var canCompare: Bool { provider != .openaiRealtime }
+
     /// How many distinct voices to allow. 0 means "work it out", which is right
     /// for unknown content but will occasionally over-split; naming the real
     /// number makes extra speakers impossible.
@@ -171,12 +182,17 @@ final class AppState: ObservableObject {
     private static let whisperModelKey = "whisperModel"
     private static let labelSpeakersKey = "labelSpeakers"
     private static let expectedSpeakersKey = "expectedSpeakers"
+    private static let compareKey = "compareEngines"
     private static let sourceKey = "sourceLanguage"
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
 
     private let capture = SystemAudioCaptureService()
     private var engine: TranslationEngine?
+
+    /// The second engine in compare mode. Receives exactly the same buffers as
+    /// the first, so any difference in output is the engine, not the input.
+    private var comparisonEngine: TranslationEngine?
 
     let subtitles = SubtitleManager()
     private lazy var subtitlePanel = SubtitlePanelController(manager: subtitles)
@@ -190,6 +206,7 @@ final class AppState: ObservableObject {
         whisperModel = defaults.string(forKey: Self.whisperModelKey).flatMap(WhisperModel.init) ?? .small
         labelSpeakers = defaults.bool(forKey: Self.labelSpeakersKey)
         expectedSpeakers = defaults.integer(forKey: Self.expectedSpeakersKey)
+        compareEngines = defaults.bool(forKey: Self.compareKey)
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
@@ -202,6 +219,7 @@ final class AppState: ObservableObject {
         }
         capture.onAudioBuffer = { [weak self] buffer in
             self?.engine?.receive(buffer)
+            self?.comparisonEngine?.receive(buffer)
         }
 
         reconcileSourceLanguage()
@@ -248,19 +266,30 @@ final class AppState: ObservableObject {
             return
         }
 
+        let comparing = compareEngines && canCompare
+        SubtitleManager.setComparing(comparing)
+        let primaryLabel = comparing ? provider.shortLabel : nil
+
         engine.onStateChange = { [weak self] state in
             MainActor.assumeIsolated { self?.applyEngineState(state) }
         }
         engine.onPartialTranslation = { [weak self] text, speaker in
-            MainActor.assumeIsolated { self?.subtitles.updatePartial(text, speaker: speaker) }
+            MainActor.assumeIsolated {
+                self?.subtitles.updatePartial(text, speaker: speaker, origin: primaryLabel)
+            }
         }
         engine.onFinalTranslation = { [weak self] text, speaker in
-            MainActor.assumeIsolated { self?.subtitles.complete(text, speaker: speaker) }
+            MainActor.assumeIsolated {
+                self?.subtitles.complete(text, speaker: speaker, origin: primaryLabel)
+                if comparing { Log.info(.compare, "[\(primaryLabel ?? "primary")] \(text)") }
+            }
         }
         engine.onFatalError = { [weak self] message in
             MainActor.assumeIsolated { self?.fail(with: message, kind: nil) }
         }
         self.engine = engine
+
+        if comparing { startComparisonEngine() }
         status = .connecting
         subtitles.clear()
         subtitlePanel.show()
@@ -280,6 +309,8 @@ final class AppState: ObservableObject {
         audioLevel = 0
         engine?.stop()
         engine = nil
+        comparisonEngine?.stop()
+        comparisonEngine = nil
         subtitlePanel.hide()
         subtitles.clear()
         Task { await capture.stop() }
@@ -332,6 +363,35 @@ final class AppState: ObservableObject {
             }
             return SpeechTranscriptionService()
         }
+    }
+
+    /// Starts OpenAI Realtime alongside the selected provider. A failure here
+    /// ends the comparison only — the real session carries on, since losing the
+    /// experiment shouldn't cost you your subtitles.
+    private func startComparisonEngine() {
+        let rival = OpenAIRealtimeService()
+        do {
+            try rival.start(source: sourceLanguage, target: targetLanguage)
+        } catch {
+            Log.error(.compare, "Could not start the comparison engine: \(error.localizedDescription)")
+            return
+        }
+
+        let label = TranslationProvider.openaiRealtime.shortLabel
+        rival.onPartialTranslation = { [weak self] text, _ in
+            MainActor.assumeIsolated { self?.subtitles.updatePartial(text, origin: label) }
+        }
+        rival.onFinalTranslation = { [weak self] text, _ in
+            MainActor.assumeIsolated {
+                self?.subtitles.complete(text, origin: label)
+                Log.info(.compare, "[\(label)] \(text)")
+            }
+        }
+        rival.onFatalError = { message in
+            Log.error(.compare, "Comparison engine stopped: \(message)")
+        }
+        comparisonEngine = rival
+        Log.info(.compare, "Comparing \(provider.shortLabel) against \(label)")
     }
 
     /// Nil unless labelling is on and the model is present — the transcriber
@@ -404,6 +464,8 @@ final class AppState: ObservableObject {
         audioLevel = 0
         engine?.stop()
         engine = nil
+        comparisonEngine?.stop()
+        comparisonEngine = nil
         subtitlePanel.hide()
         subtitles.clear()
         Task { await capture.stop() }

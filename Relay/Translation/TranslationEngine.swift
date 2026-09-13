@@ -20,6 +20,15 @@ enum TranslationProvider: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Compact name for the compare overlay, where space is tight.
+    var shortLabel: String {
+        switch self {
+        case .claude: return "Local · Claude"
+        case .openai: return "Local · OpenAI"
+        case .openaiRealtime: return "Realtime"
+        }
+    }
+
     /// Whether speech recognition happens locally. The Realtime model takes
     /// audio directly, so it has no local half.
     var usesLocalSpeech: Bool { self != .openaiRealtime }

@@ -20,6 +20,8 @@ final class SubtitleManager: ObservableObject {
         let startsNewTurn: Bool
         /// 1-based speaker number when voiceprint labelling is on.
         let speaker: Int?
+        /// Which engine produced this, when two are running side by side.
+        let origin: String?
     }
 
     /// Finished lines, oldest first.
@@ -34,13 +36,23 @@ final class SubtitleManager: ObservableObject {
     /// Speaker of the in-flight utterance, when known.
     @Published private(set) var currentSpeaker: Int?
 
+    /// Engine producing the in-flight utterance, in compare mode.
+    @Published private(set) var currentOrigin: String?
+
     /// How often partial text may redraw. 100 ms still reads as captions
     /// rather than a terminal, and shaves latency off every streamed line.
     private static let refreshInterval: TimeInterval = 0.10
 
     /// Completed lines kept on screen. Two plus the in-flight line gives the
     /// three visible rows the design asks for.
-    private static let maxHistory = 2
+    private static var maxHistory = 2
+
+    /// Two engines produce roughly twice the lines, so the overlay holds more
+    /// while comparing — otherwise each engine's output scrolls the other's
+    /// away before you can read them together.
+    static func setComparing(_ comparing: Bool) {
+        maxHistory = comparing ? 5 : 2
+    }
 
     /// Wipe the overlay after this much silence so stale text doesn't sit
     /// there implying it's current.
@@ -64,7 +76,7 @@ final class SubtitleManager: ObservableObject {
     // MARK: - Input
 
     /// A revised guess at the utterance in flight. Coalesced.
-    func updatePartial(_ text: String, speaker: Int? = nil) {
+    func updatePartial(_ text: String, speaker: Int? = nil, origin: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -77,6 +89,7 @@ final class SubtitleManager: ObservableObject {
         }
 
         currentSpeaker = speaker
+        currentOrigin = origin
         pending = trimmed
         scheduleFlush()
         resetIdleTimer()
@@ -84,7 +97,7 @@ final class SubtitleManager: ObservableObject {
 
     /// A finished utterance. Published immediately — waiting on the debounce
     /// timer would delay the one update that's guaranteed not to change.
-    func complete(_ text: String, speaker: Int? = nil) {
+    func complete(_ text: String, speaker: Int? = nil, origin: String? = nil) {
         cancelPendingFlush()
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -94,12 +107,13 @@ final class SubtitleManager: ObservableObject {
         current = ""
         currentStartsNewTurn = false
         currentSpeaker = nil
+        currentOrigin = nil
         currentStartedAt = nil
         lastCompletedAt = Date()
 
         guard !trimmed.isEmpty else { return }
 
-        history.append(Line(text: trimmed, startsNewTurn: newTurn, speaker: speaker))
+        history.append(Line(text: trimmed, startsNewTurn: newTurn, speaker: speaker, origin: origin))
         if history.count > Self.maxHistory {
             history.removeFirst(history.count - Self.maxHistory)
         }
@@ -115,6 +129,7 @@ final class SubtitleManager: ObservableObject {
         current = ""
         currentStartsNewTurn = false
         currentSpeaker = nil
+        currentOrigin = nil
         currentStartedAt = nil
         lastCompletedAt = .distantPast
     }

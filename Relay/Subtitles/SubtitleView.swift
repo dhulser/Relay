@@ -37,9 +37,11 @@ struct SubtitleView: View {
                 let previous = index > 0 ? manager.history[index - 1].speaker : nil
                 row(text: line.text,
                     speaker: line.speaker,
-                    showsLabel: line.speaker != nil && line.speaker != previous,
+                    origin: line.origin,
+                    showsLabel: line.origin != nil || (line.speaker != nil && line.speaker != previous),
                     // With real speaker labels the pause rule is redundant.
-                    showsDivider: line.speaker == nil && line.startsNewTurn && index > 0,
+                    showsDivider: line.speaker == nil && line.origin == nil
+                        && line.startsNewTurn && index > 0,
                     dimmed: true)
             }
 
@@ -47,8 +49,10 @@ struct SubtitleView: View {
                 let previous = manager.history.last?.speaker
                 row(text: manager.current,
                     speaker: manager.currentSpeaker,
-                    showsLabel: manager.currentSpeaker != nil && manager.currentSpeaker != previous,
-                    showsDivider: manager.currentSpeaker == nil
+                    origin: manager.currentOrigin,
+                    showsLabel: manager.currentOrigin != nil
+                        || (manager.currentSpeaker != nil && manager.currentSpeaker != previous),
+                    showsDivider: manager.currentSpeaker == nil && manager.currentOrigin == nil
                         && manager.currentStartsNewTurn && !manager.history.isEmpty,
                     dimmed: false)
             }
@@ -75,26 +79,45 @@ struct SubtitleView: View {
     }
 
     @ViewBuilder
-    private func row(text: String, speaker: Int?, showsLabel: Bool,
+    private func row(text: String, speaker: Int?, origin: String? = nil, showsLabel: Bool,
                      showsDivider: Bool, dimmed: Bool) -> some View {
         if showsDivider { turnDivider }
 
         VStack(alignment: .leading, spacing: 2) {
-            if showsLabel, let speaker {
-                Text("Speaker \(speaker)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Self.colour(for: speaker).opacity(dimmed ? 0.6 : 0.95))
-                    .padding(.top, 4)
+            if showsLabel {
+                // In compare mode the engine name takes the label slot, since
+                // knowing which engine wrote a line matters more than who spoke.
+                if let origin {
+                    Text(origin)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Self.originColour(origin).opacity(dimmed ? 0.7 : 1))
+                        .padding(.top, 4)
+                } else if let speaker {
+                    Text("Speaker \(speaker)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Self.colour(for: speaker).opacity(dimmed ? 0.6 : 0.95))
+                        .padding(.top, 4)
+                }
             }
 
             Text(text)
-                .font(.system(size: 26, weight: .medium, design: .rounded))
+                // Smaller while comparing: two engines mean twice the lines.
+                .font(.system(size: origin == nil ? 26 : 19, weight: .medium, design: .rounded))
                 // Finished lines recede so the eye lands on the newest text;
                 // a speaker's colour tints their line so turns read at a glance.
-                .foregroundStyle(speaker.map {
-                    Self.colour(for: $0).opacity(dimmed ? 0.55 : 1)
-                } ?? .white.opacity(dimmed ? 0.55 : 1))
+                .foregroundStyle(tint(speaker: speaker, origin: origin, dimmed: dimmed))
         }
+    }
+
+    private func tint(speaker: Int?, origin: String?, dimmed: Bool) -> Color {
+        if let origin { return Self.originColour(origin).opacity(dimmed ? 0.75 : 1) }
+        if let speaker { return Self.colour(for: speaker).opacity(dimmed ? 0.55 : 1) }
+        return .white.opacity(dimmed ? 0.55 : 1)
+    }
+
+    /// Two fixed colours so the eye can separate the engines instantly.
+    private static func originColour(_ origin: String) -> Color {
+        origin.hasPrefix("Local") ? speakerColours[2] : speakerColours[0]
     }
 
     /// Marks a pause long enough to suggest a different speaker, used only when

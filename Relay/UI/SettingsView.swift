@@ -70,6 +70,16 @@ struct SettingsView: View {
             }
 
             apiKeyRow
+
+            if appState.canCompare {
+                Divider().padding(.vertical, 2)
+                Toggle("Compare against OpenAI Realtime", isOn: $appState.compareEngines)
+                Text("Runs both engines on the same audio and labels every line with the engine "
+                     + "that produced it. For deciding which to use — leaving it on pays "
+                     + "Realtime's $2.04 an hour on top of the usual cost.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
