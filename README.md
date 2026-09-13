@@ -1,4 +1,4 @@
-# Relay
+# Relay: Live Translator
 
 Live subtitles, in your language, for calls and anything else playing on your
 Mac. Relay listens to what your Mac is playing, recognises the speech, and puts

@@ -33,7 +33,7 @@ BODY_PART="$(python3 -c 'import sys; s=open(sys.argv[1]).read(); print(s[s.index
 <link rel="canonical" href="$URL">
 <meta property="og:type" content="website">
 <meta property="og:url" content="$URL">
-<meta property="og:title" content="Relay for Mac">
+<meta property="og:title" content="Relay: Live Translator for Mac">
 <meta property="og:description" content="Live subtitles in your language for calls and anything else playing on your Mac.">
 <meta property="og:image" content="${URL}assets/subtitles.png">
 <meta name="twitter:card" content="summary_large_image">

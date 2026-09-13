@@ -22,7 +22,7 @@ cask "relay" do
   sha256 "$SHA"
 
   url "https://github.com/dhulser/Relay/releases/download/v#{version}/Relay.dmg"
-  name "Relay"
+  name "Relay: Live Translator"
   desc "Live translated subtitles for calls and anything else playing on your Mac"
   homepage "https://github.com/dhulser/Relay"
 
