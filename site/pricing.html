@@ -1,0 +1,169 @@
+<title>Relay Pricing</title>
+<meta name="description" content="What Relay: Live Translator costs to run with your own Anthropic or OpenAI key. Relay itself is free.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .hero { padding: 64px 0 8px; }
+  h1 { max-width: 20ch; }
+  .price { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .modes td.price { color: var(--ink); font-weight: 600; }
+  .modes .mode { color: var(--faint); font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; }
+  section { padding: 60px 0; }
+  .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
+  .keys a {
+    display: block; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px;
+    background: var(--raise); text-decoration: none; color: var(--ink);
+  }
+  .keys a:hover { border-color: var(--accent); }
+  .keys strong { display: block; font-weight: 600; margin-bottom: 4px; }
+  .keys span { color: var(--muted); font-size: 14.5px; }
+  @media (max-width: 720px) { .keys { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <a href="./" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#5B63D3"/>
+        <g fill="#fff" opacity=".95">
+          <rect x="6"  y="13.5" width="2.6" height="5"   rx="1.3"/>
+          <rect x="10.4" y="10.5" width="2.6" height="11"  rx="1.3"/>
+          <rect x="14.8" y="7.5"  width="2.6" height="17"  rx="1.3"/>
+          <rect x="19.2" y="10.5" width="2.6" height="11"  rx="1.3"/>
+          <rect x="23.6" y="13.5" width="2.6" height="5"   rx="1.3"/>
+        </g>
+      </svg>
+      <span class="wordmark">Relay</span>
+    </a>
+    <nav>
+      <a href="./#how">How it works</a>
+      <a href="./#privacy">Privacy</a>
+      <a href="pricing.html" style="color:var(--ink)">Pricing</a>
+      <a href="https://github.com/dhulser/Relay">GitHub</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="download small" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">Download for Mac</a>
+  </header>
+
+  <div class="hero">
+    <p class="eyebrow">Pricing</p>
+    <h1>Relay is free. You pay your provider for what it uses.</h1>
+    <p class="lede">
+      Add your own Anthropic or OpenAI key and the bill goes straight to them, at their prices,
+      for exactly the translation Relay asked for. There is no Relay account and nothing to
+      subscribe to. Here is what that comes to.
+    </p>
+  </div>
+
+  <section class="first">
+    <h2>An hour of talking</h2>
+    <p>
+      The figures below are for an hour of someone actually speaking, about twelve phrases a
+      minute, at the providers' published prices. Local mode sends only text, so a quiet hour
+      costs almost nothing. Instant mode bills every minute of audio, whether anyone is
+      talking or not.
+    </p>
+    <div class="table-wrap">
+      <table class="modes">
+        <thead>
+          <tr><th>Mode</th><th>Engine</th><th>Per hour of speech</th><th>Audio</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mode">Local</td><td>OpenAI, Luna</td><td class="price">about 4&cent;</td><td>Stays on your Mac</td></tr>
+          <tr><td class="mode">Local</td><td>Claude, Haiku 4.5</td><td class="price">about 19&cent;</td><td>Stays on your Mac</td></tr>
+          <tr><td class="mode">Instant</td><td>OpenAI Realtime</td><td class="price">$2.04</td><td>Streams to OpenAI</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      Local mode recognises speech on your Mac with Whisper, then translates the text. Instant
+      mode streams the audio to OpenAI and shows words while the speaker is still talking,
+      which is why it costs fifty times more.
+    </p>
+  </section>
+
+  <section>
+    <h2>A month, roughly</h2>
+    <p>Ten hours of calls a month, which is a couple of meetings a week:</p>
+    <div class="table-wrap">
+      <table class="modes">
+        <thead>
+          <tr><th>Setup</th><th>Ten hours</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Local, OpenAI</td><td class="price">about 40&cent;</td></tr>
+          <tr><td>Local, Claude</td><td class="price">about $1.90</td></tr>
+          <tr><td>Instant</td><td class="price">about $20</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Speaker labels, language detection and the speech models themselves are all free. They run on your Mac.</p>
+  </section>
+
+  <section>
+    <h2>Larger models</h2>
+    <p>
+      Relay defaults to the fastest, cheapest good model from each provider. If you would rather
+      have more careful phrasing, pick a larger one in Settings. Each line waits a little longer
+      and costs more.
+    </p>
+    <div class="table-wrap">
+      <table class="modes">
+        <thead>
+          <tr><th>Model</th><th>Per hour of speech</th><th>Compared with the default</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Claude, Sonnet 5</td><td class="price">about 57&cent;</td><td>Better idiom and tone</td></tr>
+          <tr><td>Claude, Opus 5</td><td class="price">about 95&cent;</td><td>Most careful, slowest</td></tr>
+          <tr><td>OpenAI, Terra</td><td class="price">about 40&cent;</td><td>Balanced</td></tr>
+          <tr><td>OpenAI, Sol</td><td class="price">about $1</td><td>Most capable</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Getting a key</h2>
+    <p>
+      Either provider will do; Relay works the same with both. Both let you prepay or set a
+      monthly limit, so a session you forgot to stop cannot run up a bill.
+    </p>
+    <div class="keys">
+      <a href="https://console.anthropic.com/">
+        <strong>Anthropic</strong>
+        <span>console.anthropic.com. Create a key under API Keys, paste it into Relay's Settings.</span>
+      </a>
+      <a href="https://platform.openai.com/api-keys">
+        <strong>OpenAI</strong>
+        <span>platform.openai.com. One key covers both Local and Instant mode.</span>
+      </a>
+    </div>
+    <p class="note">Keys are kept in the macOS Keychain. Relay never sees them anywhere else, and neither do we.</p>
+  </section>
+
+  <section>
+    <h2>Prefer not to manage a key?</h2>
+    <p>
+      A hosted option is coming: Relay brings the keys, and you pay a small monthly amount plus
+      what you use. Nothing to sign up for yet. It will live on this page when it is ready.
+    </p>
+  </section>
+
+  <div class="close">
+    <h2>Try it on your next call.</h2>
+    <div class="actions">
+      <a class="download" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">
+        Download Relay for Mac
+      </a>
+      <span class="terms">Free with your own key &middot; Apple Silicon &middot; macOS 15+</span>
+    </div>
+  </div>
+
+  <footer>
+    <a href="./">Home</a>
+    <a href="https://github.com/dhulser/Relay">Source on GitHub</a>
+    <a href="https://github.com/dhulser/Relay/issues">Report a problem</a>
+  </footer>
+</div>
