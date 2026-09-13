@@ -44,6 +44,10 @@ targets:
         SUFeedURL: https://github.com/dhulser/Relay/releases/latest/download/appcast.xml
         SUPublicEDKey: cngR4yoPAQbZOXdYFHNfLSV+LqkW0jaazcaOjVwUATc=
         SUEnableInstallerLauncherService: false
+        # relay://activate?token=… hands the Relay Hosted token back after checkout.
+        CFBundleURLTypes:
+          - CFBundleURLName: co.kevel.Relay.activate
+            CFBundleURLSchemes: [relay]
         CFBundleName: Relay
         CFBundleDisplayName: Relay
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -56,8 +60,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.kevel.Relay
         PRODUCT_NAME: Relay
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "2"
         # Manual signing with the existing "Apple Development" identity. A stable
         # signature keeps the system-audio permission across rebuilds, which
         # ad-hoc signing would not.

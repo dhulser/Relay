@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct RelayApp: App {
     @StateObject private var appState = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         MenuBarExtra {

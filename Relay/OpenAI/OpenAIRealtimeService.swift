@@ -23,6 +23,8 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     private var task: URLSessionWebSocketTask?
 
     private var apiKey = ""
+    /// Relay Hosted: the proxy's address and token instead of OpenAI's.
+    private let hosted: (endpoint: URL, token: String)?
     private var sourceLanguage: SourceLanguageSetting = .auto
     private var targetLanguage: Language = .english
 
@@ -60,7 +62,8 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         }
     }
 
-    override init() {
+    init(hosted: (endpoint: URL, token: String)? = nil) {
+        self.hosted = hosted
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }
@@ -68,7 +71,12 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     // MARK: - Lifecycle
 
     func start(source: SourceLanguageSetting, target: Language) throws {
-        guard let key = KeychainService.loadAPIKey(for: .openai) else {
+        let key: String
+        if let hosted {
+            key = hosted.token
+        } else if let own = KeychainService.loadAPIKey(for: .openai) {
+            key = own
+        } else {
             throw EngineError.missingAPIKey(.openai)
         }
         queue.async {
@@ -105,7 +113,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         state = state == .idle ? .connecting : .reconnecting
         Log.info(.realtime, reconnectAttempt == 0 ? "Connecting" : "Reconnecting (attempt \(reconnectAttempt))")
 
-        var request = URLRequest(url: RealtimeAPI.url)
+        var request = URLRequest(url: hosted.map { Self.hostedURL($0.endpoint) } ?? RealtimeAPI.url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         let task = session.webSocketTask(with: request)
@@ -113,6 +121,17 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         task.resume()
         receiveNext()
     }
+
+    /// The proxy takes the languages as query items so it can validate them.
+    private func hostedURL(_ endpoint: URL) -> URL {
+        var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+        var items = [URLQueryItem(name: "target", value: targetLanguage.isoCode)]
+        if let code = sourceLanguage.language?.isoCode { items.append(URLQueryItem(name: "source", value: code)) }
+        parts.queryItems = items
+        return parts.url!
+    }
+
+    private static func hostedURL(_ endpoint: URL) -> URL { endpoint }
 
     // MARK: - Sending
 

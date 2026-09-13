@@ -1,0 +1,44 @@
+{
+  // Relay Hosted: the backend for people who would rather not manage a key.
+  // One Worker: Stripe signup and billing, a translate proxy, an Instant-mode
+  // WebSocket proxy, and a Durable Object per customer that meters minutes.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "relay-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "relay",
+      "database_id": "4be2c1ac-fef1-4ce5-8979-e20a53d2c092",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "METER", "class_name": "CustomerMeter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CustomerMeter"] }],
+
+  "vars": {
+    "SITE_URL": "https://dhulser.github.io/Relay/",
+    // Hosted Local mode always uses the cheapest good model; the customer's
+    // price is the same regardless, so the margin stays honest.
+    "OPENAI_TEXT_MODEL": "gpt-5.6-luna",
+    "OPENAI_REALTIME_MODEL": "gpt-realtime-translate",
+    "OPENAI_TRANSCRIPTION_MODEL": "gpt-realtime-whisper",
+    // A month's bill can never pass this, base fee included. Protects the
+    // customer from a forgotten session and us from a scripted one.
+    "MONTHLY_CAP_CENTS": "5000",
+    // Filled in by scripts/stripe-setup.sh.
+    "STRIPE_PRICE_BASE": "",
+    "STRIPE_PRICE_LOCAL": "",
+    "STRIPE_PRICE_INSTANT": "",
+    "STRIPE_METER_LOCAL": "relay_local_minutes",
+    "STRIPE_METER_INSTANT": "relay_instant_minutes"
+  }
+  // Secrets, set with `wrangler secret put <NAME>`:
+  //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, OPENAI_API_KEY
+}

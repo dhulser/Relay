@@ -61,6 +61,28 @@ enum KeychainService {
         return legacy
     }
 
+    // MARK: - Other secrets (the Relay Hosted token)
+
+    static func loadSecret(account: String) -> String? {
+        read(account: account, service: defaultService)
+    }
+
+    @discardableResult
+    static func saveSecret(_ value: String, account: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        let update = [kSecValueData as String: data] as CFDictionary
+        if SecItemUpdate(baseQuery(account, service: defaultService) as CFDictionary, update) == errSecSuccess { return true }
+        var query = baseQuery(account, service: defaultService)
+        query[kSecValueData as String] = data
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    static func deleteSecret(account: String) -> Bool {
+        let status = SecItemDelete(baseQuery(account, service: defaultService) as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     private static func read(account: String, service: String) -> String? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

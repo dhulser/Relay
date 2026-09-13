@@ -14,6 +14,7 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
 
             Form {
+                HostedSection(hosted: appState.hosted)
                 sourceSection
                 translationSection
                 languagesSection
@@ -61,28 +62,62 @@ struct SettingsView: View {
 
     // MARK: - Translation
 
+    /// With Relay Hosted on, there are two ways to run and no keys: Local
+    /// (whatever local provider was selected) and Instant.
+    private var hostedProvider: Binding<TranslationProvider> {
+        Binding(
+            get: { appState.provider == .openaiRealtime ? .openaiRealtime : .openai },
+            set: { appState.provider = $0 }
+        )
+    }
+
     private var translationSection: some View {
         Section("Translation") {
-            Picker("", selection: $appState.provider) {
-                ForEach(TranslationProvider.allCases) { Text($0.displayName).tag($0) }
+            if appState.hosted.isActive {
+                Picker("", selection: hostedProvider) {
+                    Text("Local").tag(TranslationProvider.openai)
+                    Text("Instant").tag(TranslationProvider.openaiRealtime)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            } else {
+                Picker("", selection: $appState.provider) {
+                    ForEach(TranslationProvider.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(appState.provider.pipelineDescription)
-                Text(appState.provider.characteristic)
-                HStack(spacing: 5) {
-                    Text(appState.provider.costPerHour)
-                    Text("·").foregroundStyle(.tertiary)
-                    Text(appState.provider.privacyNote)
+                if appState.hosted.isActive {
+                    let instant = appState.provider == .openaiRealtime
+                    Text(instant ? "Audio streams through Relay to OpenAI's translation model."
+                                 : "Speech is recognised on this Mac, then Relay translates the text.")
+                    Text(appState.provider.characteristic)
+                    HStack(spacing: 5) {
+                        Text(instant ? "$3.50 an hour" : "40¢ an hour")
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(instant ? "audio is sent to OpenAI" : "audio stays on your Mac")
+                    }
+                    .foregroundStyle(instant ? .secondary : RelayTheme.listening)
+                } else {
+                    Text(appState.provider.pipelineDescription)
+                    Text(appState.provider.characteristic)
+                    HStack(spacing: 5) {
+                        Text(appState.provider.costPerHour)
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(appState.provider.privacyNote)
+                    }
+                    .foregroundStyle(appState.provider.usesLocalSpeech ? RelayTheme.listening : .secondary)
                 }
-                .foregroundStyle(appState.provider.usesLocalSpeech ? RelayTheme.listening : .secondary)
             }
             .font(.system(size: 11.5))
             .foregroundStyle(.secondary)
             .padding(.vertical, 2)
 
+            if appState.hosted.isActive {
+                EmptyView()
+            } else {
             switch appState.provider {
             case .claude:
                 Picker("Model", selection: $appState.claudeModel) {
@@ -101,7 +136,7 @@ struct SettingsView: View {
             }
 
             apiKeyRow
-
+            }
         }
     }
 

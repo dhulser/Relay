@@ -321,6 +321,9 @@ final class AppState: ObservableObject {
     }
 
     let updater = UpdaterService()
+    /// Relay Hosted: when active, Local and Instant go through the Relay API
+    /// with the account token instead of the user's own provider keys.
+    let hosted = HostedAccount()
 
     private let defaults = UserDefaults.standard
     private static let keepTranscriptKey = "keepTranscript"
@@ -386,6 +389,27 @@ final class AppState: ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshReadiness() }
+            .store(in: &cancellables)
+
+        // Hosted signing in or out changes what "ready" means.
+        hosted.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+                self?.refreshReadiness()
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: AppDelegate.activationNotification)
+            .compactMap { $0.userInfo?["token"] as? String }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] token in
+                guard let self else { return }
+                Task {
+                    await self.hosted.activate(token: token)
+                    self.refreshReadiness()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
             .store(in: &cancellables)
 
         reconcileSourceLanguage()
@@ -454,7 +478,7 @@ final class AppState: ObservableObject {
 
         // Every engine needs its key before anything starts, so a missing one
         // fails immediately rather than half-way through a comparison.
-        for candidate in providers where KeychainService.loadAPIKey(for: candidate) == nil {
+        for candidate in providers where !hosted.isActive && KeychainService.loadAPIKey(for: candidate) == nil {
             hasAPIKey = provider == candidate ? false : hasAPIKey
             status = .missingAPIKey
             errorDetail = providers.count > 1
@@ -549,7 +573,8 @@ final class AppState: ObservableObject {
             let stream = SubtitleStream(label: candidate.shortLabel, tintIndex: index)
 
             if candidate == .openaiRealtime {
-                let engine = OpenAIRealtimeService()
+                let engine = OpenAIRealtimeService(
+                    hosted: hosted.isActive ? hosted.token.map { (HostedAccount.realtimeEndpoint, $0) } : nil)
                 try engine.start(source: sourceLanguage, target: targetLanguage)
                 wire(realtime: engine, to: stream, comparing: comparing)
                 built.append(Lane(provider: candidate, stream: stream, realtime: engine))
@@ -699,6 +724,10 @@ final class AppState: ObservableObject {
     }
 
     private func makeTranslator(for candidate: TranslationProvider) throws -> TextTranslating {
+        // Hosted Local mode: the API owns the prompt and picks the model.
+        if hosted.isActive, let token = hosted.token {
+            return HostedTranslator(token: token, source: sourceLanguage, target: targetLanguage)
+        }
         guard let apiKey = KeychainService.loadAPIKey(for: candidate) else {
             throw EngineError.missingAPIKey(candidate)
         }
@@ -808,7 +837,7 @@ final class AppState: ObservableObject {
     /// key, or a speech model nobody has downloaded yet. Only the resting
     /// states are rewritten; a running session keeps its own status.
     func refreshReadiness() {
-        hasAPIKey = KeychainService.hasAPIKey(for: provider)
+        hasAPIKey = hosted.isActive || KeychainService.hasAPIKey(for: provider)
 
         switch status {
         case .idle, .missingAPIKey, .missingSpeechModel:
