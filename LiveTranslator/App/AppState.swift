@@ -106,6 +106,17 @@ final class AppState: ObservableObject {
         didSet { defaults.set(whisperModel.rawValue, forKey: Self.whisperModelKey) }
     }
 
+    /// Voiceprint speaker labelling. Only possible on the local pipelines,
+    /// where we hold the audio that produced each line.
+    @Published var labelSpeakers: Bool {
+        didSet { defaults.set(labelSpeakers, forKey: Self.labelSpeakersKey) }
+    }
+
+    /// Whether speaker labelling can run at all with the current selection.
+    var canLabelSpeakers: Bool {
+        provider.usesLocalSpeech && speechEngine == .whisper
+    }
+
     /// Auto-detect is possible when the Realtime model is doing the listening,
     /// or when the local recogniser is Whisper.
     var canAutoDetect: Bool {
@@ -149,6 +160,7 @@ final class AppState: ObservableObject {
     private static let openAIModelKey = "openAIModel"
     private static let speechEngineKey = "speechEngine"
     private static let whisperModelKey = "whisperModel"
+    private static let labelSpeakersKey = "labelSpeakers"
     private static let sourceKey = "sourceLanguage"
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
@@ -166,6 +178,7 @@ final class AppState: ObservableObject {
         openAIModel = defaults.string(forKey: Self.openAIModelKey).flatMap(OpenAITextModel.init) ?? .luna
         speechEngine = defaults.string(forKey: Self.speechEngineKey).flatMap(SpeechEngine.init) ?? .whisper
         whisperModel = defaults.string(forKey: Self.whisperModelKey).flatMap(WhisperModel.init) ?? .small
+        labelSpeakers = defaults.bool(forKey: Self.labelSpeakersKey)
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
@@ -183,7 +196,8 @@ final class AppState: ObservableObject {
         reconcileSourceLanguage()
         refreshAPIKeyState()
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
-            + "\(WhisperRuntime.languageCount) languages")
+            + "\(WhisperRuntime.languageCount) languages; "
+            + "sherpa-onnx \(SpeakerRuntime.version)")
     }
 
     // MARK: - Session control
@@ -226,11 +240,11 @@ final class AppState: ObservableObject {
         engine.onStateChange = { [weak self] state in
             MainActor.assumeIsolated { self?.applyEngineState(state) }
         }
-        engine.onPartialTranslation = { [weak self] text in
-            MainActor.assumeIsolated { self?.showPartial(text) }
+        engine.onPartialTranslation = { [weak self] text, speaker in
+            MainActor.assumeIsolated { self?.subtitles.updatePartial(text, speaker: speaker) }
         }
-        engine.onFinalTranslation = { [weak self] text in
-            MainActor.assumeIsolated { self?.showFinal(text) }
+        engine.onFinalTranslation = { [weak self] text, speaker in
+            MainActor.assumeIsolated { self?.subtitles.complete(text, speaker: speaker) }
         }
         engine.onFatalError = { [weak self] message in
             MainActor.assumeIsolated { self?.fail(with: message, kind: nil) }
@@ -288,7 +302,7 @@ final class AppState: ObservableObject {
     private func makeTranscriber() throws -> SpeechTranscribing {
         switch speechEngine {
         case .whisper:
-            let store = WhisperModelStore.shared
+            let store = ModelStore.whisper
             guard store.isInstalled(whisperModel) else {
                 throw EngineError.setupFailed(
                     "The \(whisperModel.displayName) speech model isn't downloaded yet. "
@@ -296,7 +310,8 @@ final class AppState: ObservableObject {
                 )
             }
             return WhisperTranscriptionService(model: whisperModel,
-                                               modelURL: store.url(for: whisperModel))
+                                               modelURL: store.url(for: whisperModel),
+                                               speakers: makeSpeakerService())
         case .apple:
             guard #available(macOS 26.0, *) else {
                 throw EngineError.setupFailed(
@@ -304,6 +319,23 @@ final class AppState: ObservableObject {
                 )
             }
             return SpeechTranscriptionService()
+        }
+    }
+
+    /// Nil unless labelling is on and the model is present — the transcriber
+    /// simply skips labelling rather than failing the whole session.
+    private func makeSpeakerService() -> SpeakerEmbeddingService? {
+        guard labelSpeakers else { return nil }
+        let store = ModelStore.speaker
+        guard store.isInstalled(.campPlus) else {
+            Log.error(.speakers, "Speaker labelling is on but the model isn't downloaded")
+            return nil
+        }
+        do {
+            return try SpeakerEmbeddingService(modelURL: store.url(for: .campPlus))
+        } catch {
+            Log.error(.speakers, error.localizedDescription)
+            return nil
         }
     }
 
@@ -328,14 +360,6 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Translation output
-
-    private func showPartial(_ text: String) {
-        subtitles.updatePartial(text)
-    }
-
-    private func showFinal(_ text: String) {
-        subtitles.complete(text)
-    }
 
     func resetSubtitlePosition() {
         subtitlePanel.resetPosition()

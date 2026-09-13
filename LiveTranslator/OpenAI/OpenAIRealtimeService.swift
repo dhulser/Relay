@@ -10,8 +10,10 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
 
     // TranslationEngine — callbacks are delivered on the main queue.
     var onStateChange: ((EngineState) -> Void)?
-    var onPartialTranslation: ((String) -> Void)?
-    var onFinalTranslation: ((String) -> Void)?
+    // The Realtime model returns text with no alignment to our audio, so there
+    // is nothing to hang a speaker label on — always nil.
+    var onPartialTranslation: ((String, Int?) -> Void)?
+    var onFinalTranslation: ((String, Int?) -> Void)?
     var onFatalError: ((String) -> Void)?
 
     private var session: URLSession!
@@ -230,13 +232,13 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
 
             let running = currentUtterance.trimmingCharacters(in: .whitespaces)
             guard !running.isEmpty else { return }
-            DispatchQueue.main.async { [weak self] in self?.onPartialTranslation?(running) }
+            DispatchQueue.main.async { [weak self] in self?.onPartialTranslation?(running, nil) }
 
         case .translatedCompleted(let text):
             let final = text.isEmpty ? currentUtterance : text
             currentUtterance = ""
             guard !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(final) }
+            DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(final, nil) }
 
         case .sourceTranscript:
             break // source-language captions aren't part of v1
@@ -268,7 +270,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             currentUtterance = String(currentUtterance[cut...])
             guard !sentence.isEmpty else { continue }
-            DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(sentence) }
+            DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(sentence, nil) }
         }
 
         // Someone talking without punctuation would otherwise never get a line
@@ -281,7 +283,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         let chunk = String(currentUtterance[..<space]).trimmingCharacters(in: .whitespaces)
         currentUtterance = String(currentUtterance[currentUtterance.index(after: space)...])
         guard !chunk.isEmpty else { return }
-        DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(chunk) }
+        DispatchQueue.main.async { [weak self] in self?.onFinalTranslation?(chunk, nil) }
     }
 
     private static let maximumLineCharacters = 160

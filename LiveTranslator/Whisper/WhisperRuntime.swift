@@ -16,7 +16,7 @@ enum WhisperRuntime {
 
 /// The multilingual GGML models worth offering. English-only variants are
 /// deliberately excluded — the whole point here is language auto-detection.
-enum WhisperModel: String, CaseIterable, Identifiable, Codable {
+enum WhisperModel: String, CaseIterable, Identifiable, Codable, DownloadableModel {
     case base
     case small
     case medium

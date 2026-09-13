@@ -1,3 +1,4 @@
-// Bridging header exposing whisper.cpp's C API to Swift.
-// Libraries and headers are vendored in Vendor/whisper (see scripts/build-whisper.sh).
+// Bridging header for the vendored whisper.cpp C API.
+// (sherpa-onnx is imported as the SherpaOnnxC module — it ships its own
+// modulemap in Vendor/sherpa, so it must not also be included here.)
 #import "whisper.h"

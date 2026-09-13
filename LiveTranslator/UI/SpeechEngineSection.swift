@@ -4,7 +4,7 @@ import SwiftUI
 /// and — for Whisper — which model, including downloading it.
 struct SpeechEngineSection: View {
     @EnvironmentObject private var appState: AppState
-    @ObservedObject private var store = WhisperModelStore.shared
+    @ObservedObject private var store = ModelStore.whisper
 
     var body: some View {
         Section("Speech Recognition") {
@@ -30,6 +30,19 @@ struct SpeechEngineSection: View {
             } else {
                 Text("Uses macOS's built-in recogniser. Downloads a language pack the first "
                      + "time you use a language, and handles one language at a time.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if appState.canLabelSpeakers {
+                Toggle("Label speakers", isOn: $appState.labelSpeakers)
+
+                if appState.labelSpeakers {
+                    SpeakerModelRow()
+                }
+
+                Text("Identifies voices from a voiceprint and tags each line. It recognises that "
+                     + "two lines share a voice, not who anyone is.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

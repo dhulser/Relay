@@ -17,6 +17,11 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private let model: WhisperModel
     private let modelURL: URL
 
+    /// Optional voiceprint labelling. Nil when the user hasn't enabled it or
+    /// the model isn't downloaded.
+    private let speakers: SpeakerEmbeddingService?
+    private let clusterer = SpeakerClusterer()
+
     private var context: OpaquePointer?
     private let converter = AudioConverter(target: WhisperTranscriptionService.whisperFormat)
     private let inference = DispatchQueue(label: "co.kevel.LiveTranslator.whisper", qos: .userInitiated)
@@ -63,9 +68,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private var busy = false
     private var loggedFirstAudio = false
 
-    init(model: WhisperModel, modelURL: URL) {
+    init(model: WhisperModel, modelURL: URL, speakers: SpeakerEmbeddingService? = nil) {
         self.model = model
         self.modelURL = modelURL
+        self.speakers = speakers
     }
 
     deinit {
@@ -98,6 +104,7 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         silenceRun = 0
         speaking = false
         loggedFirstAudio = false
+        clusterer.reset()
 
         let mode = language.map { "fixed to \($0.displayName)" } ?? "auto-detecting"
         Log.info(.whisper, "Loaded \(model.displayName) model, \(mode)")
@@ -222,12 +229,21 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             guard !cleaned.isEmpty else { return }
 
             let detected = WhisperRuntime.languageCode(for: whisper_full_lang_id(context))
+
+            // The voiceprint is computed from exactly the audio that produced
+            // this line, so the label can never drift out of sync with it.
+            var speaker: Int?
+            if let speakers, let embedding = speakers.embed(samples) {
+                speaker = self.clusterer.assign(embedding)
+            }
+
             let seconds = Double(samples.count) / Double(Self.sampleRate)
             let elapsed = Date().timeIntervalSince(started)
-            Log.info(.whisper, "[\(detected ?? "??")] \(String(format: "%.1f", seconds))s audio in "
+            let who = speaker.map { "S\($0) " } ?? ""
+            Log.info(.whisper, "\(who)[\(detected ?? "??")] \(String(format: "%.1f", seconds))s audio in "
                 + "\(String(format: "%.2f", elapsed))s — \(cleaned)")
 
-            let result = TranscriptionResult(text: cleaned, languageCode: detected)
+            let result = TranscriptionResult(text: cleaned, languageCode: detected, speaker: speaker)
             DispatchQueue.main.async { self.onFinalText?(result) }
         }
     }

@@ -33,6 +33,22 @@ The two local providers can also use **Apple's** recogniser instead of Whisper.
 It is lower latency but handles one language at a time, so the source language
 must be set by hand — Whisper identifies the language of every utterance.
 
+### Speaker labels
+
+With the Whisper engine, **Label speakers** tags each line with the voice that
+said it — "Speaker 1", "Speaker 2" — in its own colour. A 27 MB voiceprint model
+(sherpa-onnx CAM++) runs on the same audio Whisper transcribes, so a label can
+never drift out of sync with its line.
+
+It recognises that two lines share a voice, not *who* anyone is. There is no
+enrolment: the first voice heard becomes Speaker 1. Measured separation is wide
+(same voice ~0.85 cosine, different voices ~0.1), so the 0.5 threshold sits in a
+large gap. Speakers reset each session, and it caps at six voices.
+
+Not available on OpenAI Realtime: that model returns text with no alignment to
+our audio, so there is nothing to attach a label to. Without labels, a pause
+longer than 1.4s draws a short rule instead.
+
 ### Speech models
 
 Whisper models download on demand into
@@ -84,6 +100,15 @@ brew install cmake
 They are arm64-only and built with Metal plus Accelerate, which is why the app
 is Apple Silicon only.
 
+### sherpa-onnx
+
+`Vendor/sherpa` holds a prebuilt xcframework (~26 MB, thinned to arm64) used for
+speaker embeddings. To change the pinned version (currently `v1.13.8`):
+
+```bash
+./scripts/fetch-sherpa.sh
+```
+
 ## Debugging
 
 ```bash
@@ -101,6 +126,7 @@ xcodebuild test -project LiveTranslator.xcodeproj -scheme LiveTranslator \
   -configuration Debug -derivedDataPath build
 ```
 
-Covers audio-format conversion, subtitle coalescing, and an end-to-end pass of
-the local speech path against a Spanish fixture (skipped if no Whisper model is
-downloaded).
+Covers audio-format conversion, subtitle coalescing, an end-to-end pass of the
+local speech path against a Spanish fixture, and voiceprint clustering against
+two real voices interleaved. Model-dependent tests skip if the model is not
+downloaded.

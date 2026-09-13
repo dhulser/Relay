@@ -18,6 +18,8 @@ final class SubtitleManager: ObservableObject {
         /// means a different speaker or a new thought. This is a pause, not an
         /// identity — none of the engines can tell us *who* is talking.
         let startsNewTurn: Bool
+        /// 1-based speaker number when voiceprint labelling is on.
+        let speaker: Int?
     }
 
     /// Finished lines, oldest first.
@@ -28,6 +30,9 @@ final class SubtitleManager: ObservableObject {
 
     /// Whether the in-flight utterance followed a noticeable pause.
     @Published private(set) var currentStartsNewTurn = false
+
+    /// Speaker of the in-flight utterance, when known.
+    @Published private(set) var currentSpeaker: Int?
 
     /// How often partial text may redraw. 100 ms still reads as captions
     /// rather than a terminal, and shaves latency off every streamed line.
@@ -59,7 +64,7 @@ final class SubtitleManager: ObservableObject {
     // MARK: - Input
 
     /// A revised guess at the utterance in flight. Coalesced.
-    func updatePartial(_ text: String) {
+    func updatePartial(_ text: String, speaker: Int? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -71,6 +76,7 @@ final class SubtitleManager: ObservableObject {
                 && Date().timeIntervalSince(lastCompletedAt) > Self.turnGap
         }
 
+        currentSpeaker = speaker
         pending = trimmed
         scheduleFlush()
         resetIdleTimer()
@@ -78,7 +84,7 @@ final class SubtitleManager: ObservableObject {
 
     /// A finished utterance. Published immediately — waiting on the debounce
     /// timer would delay the one update that's guaranteed not to change.
-    func complete(_ text: String) {
+    func complete(_ text: String, speaker: Int? = nil) {
         cancelPendingFlush()
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,12 +93,13 @@ final class SubtitleManager: ObservableObject {
 
         current = ""
         currentStartsNewTurn = false
+        currentSpeaker = nil
         currentStartedAt = nil
         lastCompletedAt = Date()
 
         guard !trimmed.isEmpty else { return }
 
-        history.append(Line(text: trimmed, startsNewTurn: newTurn))
+        history.append(Line(text: trimmed, startsNewTurn: newTurn, speaker: speaker))
         if history.count > Self.maxHistory {
             history.removeFirst(history.count - Self.maxHistory)
         }
@@ -107,6 +114,7 @@ final class SubtitleManager: ObservableObject {
         history.removeAll()
         current = ""
         currentStartsNewTurn = false
+        currentSpeaker = nil
         currentStartedAt = nil
         lastCompletedAt = .distantPast
     }

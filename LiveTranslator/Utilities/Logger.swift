@@ -13,6 +13,7 @@ enum LogCategory: String {
     case audio = "Audio"
     case speech = "Speech"
     case whisper = "Whisper"
+    case speakers = "Speakers"
     case openai = "OpenAI"
     case claude = "Claude"
     case realtime = "Realtime"

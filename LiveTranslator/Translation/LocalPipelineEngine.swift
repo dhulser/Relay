@@ -10,13 +10,18 @@ import AVFoundation
 final class LocalPipelineEngine: TranslationEngine {
 
     var onStateChange: ((EngineState) -> Void)?
-    var onPartialTranslation: ((String) -> Void)?
-    var onFinalTranslation: ((String) -> Void)?
+    var onPartialTranslation: ((String, Int?) -> Void)?
+    var onFinalTranslation: ((String, Int?) -> Void)?
     var onFatalError: ((String) -> Void)?
 
     private let transcriber: SpeechTranscribing
     private let translator: TextTranslating
     private var startTask: Task<Void, Never>?
+
+    /// Speakers wait here between recognition and translation. The translator
+    /// handles one utterance at a time in order, so a queue keeps each label
+    /// with the line it came from.
+    private var pendingSpeakers: [Int?] = []
 
     init(transcriber: SpeechTranscribing, translator: TextTranslating) {
         self.transcriber = transcriber
@@ -24,12 +29,20 @@ final class LocalPipelineEngine: TranslationEngine {
     }
 
     func start(source: SourceLanguageSetting, target: Language) throws {
-        translator.onPartial = { [weak self] text in self?.onPartialTranslation?(text) }
-        translator.onFinal = { [weak self] text in self?.onFinalTranslation?(text) }
+        translator.onPartial = { [weak self] text in
+            self?.onPartialTranslation?(text, self?.pendingSpeakers.first ?? nil)
+        }
+        translator.onFinal = { [weak self] text in
+            guard let self else { return }
+            let speaker = self.pendingSpeakers.isEmpty ? nil : self.pendingSpeakers.removeFirst()
+            self.onFinalTranslation?(text, speaker)
+        }
         translator.onFatalError = { [weak self] message in self?.onFatalError?(message) }
 
         transcriber.onFinalText = { [weak self] result in
-            self?.translator.translate(result.text)
+            guard let self else { return }
+            self.pendingSpeakers.append(result.speaker)
+            self.translator.translate(result.text)
         }
         transcriber.onError = { [weak self] error in
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -59,6 +72,7 @@ final class LocalPipelineEngine: TranslationEngine {
     func stop() {
         startTask?.cancel()
         startTask = nil
+        pendingSpeakers.removeAll()
         translator.cancel()
 
         let transcriber = self.transcriber

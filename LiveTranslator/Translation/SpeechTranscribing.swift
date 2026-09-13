@@ -8,6 +8,14 @@ struct TranscriptionResult {
     /// Apple's recogniser always returns the locale it was configured with;
     /// Whisper returns what it actually heard.
     let languageCode: String?
+    /// 1-based speaker number from voiceprint clustering, when enabled.
+    let speaker: Int?
+
+    init(text: String, languageCode: String?, speaker: Int? = nil) {
+        self.text = text
+        self.languageCode = languageCode
+        self.speaker = speaker
+    }
 }
 
 /// Turns captured audio into finished utterances of text.

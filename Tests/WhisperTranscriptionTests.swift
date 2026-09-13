@@ -18,7 +18,7 @@ final class WhisperTranscriptionTests: XCTestCase {
 
     func testTranscribesSpanishAndDetectsTheLanguage() async throws {
         let model = WhisperModel.base
-        let modelURL = WhisperModelStore.directory.appendingPathComponent(model.fileName)
+        let modelURL = ModelStore<WhisperModel>.directory.appendingPathComponent(model.fileName)
         try XCTSkipUnless(
             FileManager.default.fileExists(atPath: modelURL.path),
             "Whisper \(model.displayName) model not downloaded — skipping"

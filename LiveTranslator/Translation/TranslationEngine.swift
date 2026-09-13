@@ -247,8 +247,9 @@ enum EngineError: LocalizedError {
 /// delivered on the main queue.
 protocol TranslationEngine: AnyObject {
     var onStateChange: ((EngineState) -> Void)? { get set }
-    var onPartialTranslation: ((String) -> Void)? { get set }
-    var onFinalTranslation: ((String) -> Void)? { get set }
+    /// Text plus the speaker it belongs to, when the pipeline can tell.
+    var onPartialTranslation: ((String, Int?) -> Void)? { get set }
+    var onFinalTranslation: ((String, Int?) -> Void)? { get set }
     var onFatalError: ((String) -> Void)? { get set }
 
     func start(source: SourceLanguageSetting, target: Language) throws
