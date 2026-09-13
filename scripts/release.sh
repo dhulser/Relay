@@ -81,6 +81,34 @@ xcodebuild -project Relay.xcodeproj -scheme Relay \
   -configuration Release -derivedDataPath build build 2>&1 | grep -E "error:|BUILD" || true
 [ -d "$APP" ] || fail "Build produced no app bundle."
 
+# ---------------------------------------------------------------- sparkle
+# Sparkle ships its nested tools ad-hoc signed, and Xcode re-signs only the
+# framework's top level when it embeds the package. Notarization inspects
+# every executable, so Updater.app, Autoupdate and the two XPC services are
+# re-signed here, inside out, with the same identity, hardened runtime and
+# timestamp as the app. Their own entitlements are kept (Downloader is
+# sandboxed by design). The framework and then the app are re-signed last,
+# because each signature seals what it contains.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE" ]; then
+  step "Signing Sparkle's nested tools with Developer ID"
+  IDENTITY="Developer ID Application"
+  V="$SPARKLE/Versions/B"
+  for nested in "$V/XPCServices/Downloader.xpc" "$V/XPCServices/Installer.xpc" "$V/Autoupdate" "$V/Updater.app"; do
+    [ -e "$nested" ] || continue
+    codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+      --preserve-metadata=entitlements "$nested" \
+      || fail "Could not re-sign $(basename "$nested")."
+    echo "  ✓ $(basename "$nested")"
+  done
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$SPARKLE" \
+    || fail "Could not re-sign Sparkle.framework."
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+    --entitlements "$ROOT/Relay/Relay.entitlements" "$APP" \
+    || fail "Could not re-sign the app after Sparkle."
+  echo "  ✓ Sparkle.framework and Relay.app re-sealed"
+fi
+
 step "Verifying signature"
 codesign --verify --deep --strict --verbose=1 "$APP" 2>&1 | tail -1
 SIGNATURE="$(codesign -dv --verbose=2 "$APP" 2>&1 || true)"
@@ -99,6 +127,22 @@ case "$SIGNATURE" in
   *"Timestamp="*) echo "  ✓ secure timestamp" ;;
   *) fail "No secure timestamp. Release needs OTHER_CODE_SIGN_FLAGS = --timestamp." ;;
 esac
+
+# Every Mach-O inside the bundle must carry Developer ID and a timestamp;
+# one ad-hoc helper fails the whole submission.
+while IFS= read -r -d '' binary; do
+  file -b "$binary" | grep -q "Mach-O" || continue
+  INFO="$(codesign -dv --verbose=2 "$binary" 2>&1 || true)"
+  case "$INFO" in
+    *"Developer ID Application"*) ;;
+    *) fail "Not signed with Developer ID: ${binary#"$APP"/}" ;;
+  esac
+  case "$INFO" in
+    *"Timestamp="*) ;;
+    *) fail "No secure timestamp: ${binary#"$APP"/}" ;;
+  esac
+done < <(find "$APP" -type f -perm -u+x -print0)
+echo "  ✓ every nested binary signed with Developer ID and timestamped"
 
 ENTITLEMENTS="$(codesign -d --entitlements - "$APP" 2>/dev/null | tr -d '\0' || true)"
 case "$ENTITLEMENTS" in
