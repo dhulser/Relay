@@ -9,7 +9,11 @@ struct RelayApp: App {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
-            Text("🎙 Relay")
+            // The same waveform used in the popover header, so the menu bar and
+            // the app read as one thing. It fills while a session is running,
+            // which makes "is this on?" answerable without opening anything.
+            Image(systemName: appState.status == .listening ? "waveform.circle.fill" : "waveform")
+            Text("Relay")
         }
         .menuBarExtraStyle(.window)
 

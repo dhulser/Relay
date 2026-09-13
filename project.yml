@@ -30,6 +30,7 @@ targets:
     info:
       path: Relay/Info.plist
       properties:
+        CFBundleIconFile: Relay
         CFBundleName: Relay
         CFBundleDisplayName: Live Translator
         # Menu-bar-only app: no Dock icon, no main window.
