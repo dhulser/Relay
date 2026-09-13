@@ -204,6 +204,8 @@ final class AppState: ObservableObject {
     /// One recogniser shared by every local translator in the session.
     private var sharedTranscriber: SpeechTranscribing?
 
+    let stats = TranslationStats()
+
     private lazy var subtitlePanel = SubtitlePanelController()
 
     init() {
@@ -308,6 +310,7 @@ final class AppState: ObservableObject {
         }
 
         SubtitleManager.setComparing(providers.count > 1)
+        stats.beginSession()
         status = .connecting
         subtitlePanel.show(streams: lanes.map(\.stream), labelled: providers.count > 1)
 
@@ -324,6 +327,7 @@ final class AppState: ObservableObject {
         Log.info(.app, "Stop requested")
         status = .idle
         audioLevel = 0
+        stats.endSession()
         teardownLanes()
         subtitlePanel.hide()
         Task { await capture.stop() }
@@ -393,6 +397,7 @@ final class AppState: ObservableObject {
 
     /// Hands one recognised utterance to every local translator at once.
     private func distribute(_ result: TranscriptionResult) {
+        stats.record(language: result.languageCode)
         for index in lanes.indices where lanes[index].translator != nil {
             lanes[index].pendingSpeakers.append(result.speaker)
             lanes[index].translator?.translate(result.text)
@@ -415,6 +420,9 @@ final class AppState: ObservableObject {
                 let speaker = self.lanes[laneIndex].pendingSpeakers.isEmpty
                     ? nil : self.lanes[laneIndex].pendingSpeakers.removeFirst()
                 stream.manager.complete(text, speaker: speaker)
+                // Only the first lane counts, otherwise a comparison would
+                // tally the same speech once per engine.
+                if laneIndex == 0 { self.stats.record(line: text) }
                 if comparing { Log.info(.compare, "[\(label)] \(text)") }
             }
         }
@@ -436,9 +444,11 @@ final class AppState: ObservableObject {
         realtime.onPartialTranslation = { text, _ in
             MainActor.assumeIsolated { stream.manager.updatePartial(text) }
         }
-        realtime.onFinalTranslation = { text, _ in
+        realtime.onFinalTranslation = { [weak self] text, _ in
             MainActor.assumeIsolated {
                 stream.manager.complete(text)
+                // Realtime only counts when it is the engine, not the rival.
+                if let self, self.lanes.first?.realtime != nil { self.stats.record(line: text) }
                 if comparing { Log.info(.compare, "[\(label)] \(text)") }
             }
         }
@@ -578,6 +588,7 @@ final class AppState: ObservableObject {
 
         Log.error(.app, message)
         audioLevel = 0
+        stats.endSession()
         teardownLanes()
         subtitlePanel.hide()
         Task { await capture.stop() }

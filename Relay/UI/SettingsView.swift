@@ -13,6 +13,7 @@ struct SettingsView: View {
             Form {
                 translationSection
                 languagesSection
+            tallySection
                 if appState.provider.usesLocalSpeech { SpeechEngineSection() }
             }
             .formStyle(.grouped)
@@ -133,6 +134,37 @@ struct SettingsView: View {
             Text(appState.canAutoDetect
                  ? "The spoken language is detected automatically, and can change mid-session."
                  : "Apple's recogniser handles one language at a time. Switch to Whisper below to detect it automatically.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Tally
+
+    private var tallySection: some View {
+        Section("Your totals") {
+            LabeledContent("Translated") {
+                Text("\(appState.stats.wordsText) words")
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("Listening") {
+                Text(appState.stats.listeningText)
+                    .foregroundStyle(.secondary)
+            }
+            if let languages = appState.stats.languagesText {
+                LabeledContent("Languages heard") {
+                    Text(languages)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Button("Reset totals") { appState.stats.reset() }
+                    .buttonStyle(.link)
+                Spacer()
+            }
+
+            Text("Relay counts words and time. It never keeps what was said.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
         }

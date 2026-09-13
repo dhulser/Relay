@@ -132,6 +132,20 @@ private struct MenuBarPoster: View {
             }
             .padding(.top, 10)
 
+            Divider().padding(.top, 14)
+
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                figure("4,182", "words")
+                Spacer(minLength: 8)
+                figure("3h 26m", "listening")
+            }
+            .padding(.top, 12)
+
+            Text("French, Japanese and Spanish")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.tertiary)
+                .padding(.top, 6)
+
             Divider().padding(.vertical, 12)
 
             HStack(spacing: 14) {
@@ -146,5 +160,17 @@ private struct MenuBarPoster: View {
         .padding(16)
         .frame(width: 300)
         .background(Color(white: 0.99))
+    }
+
+    private func figure(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(RelayTheme.accent)
+            Text(caption)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
     }
 }

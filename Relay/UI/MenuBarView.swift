@@ -13,6 +13,7 @@ struct MenuBarView: View {
             startButton
             statusLine
             notice
+            tally
             Divider().padding(.vertical, 12)
             footer
         }
@@ -113,6 +114,43 @@ struct MenuBarView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(RelayTheme.accent)
                 .padding(.top, 6)
+        }
+    }
+
+    /// What Relay has done for you so far. Appears once there is something
+    /// worth showing, rather than starting at a row of zeros.
+    @ViewBuilder
+    private var tally: some View {
+        if appState.stats.hasAnything {
+            Divider().padding(.top, 14)
+
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                figure(appState.stats.wordsText, "words")
+                Spacer(minLength: 8)
+                figure(appState.stats.listeningText, "listening")
+            }
+            .padding(.top, 12)
+
+            if let languages = appState.stats.languagesText {
+                Text(languages)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func figure(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(RelayTheme.accent)
+                .contentTransition(.numericText())
+            Text(caption)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
         }
     }
 
