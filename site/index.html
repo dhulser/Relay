@@ -111,7 +111,7 @@
   .terms { color: var(--faint); font-size: 14.5px; }
 
   /* ---------- the caption plate, the product's own voice ---------- */
-  .stage { padding: 52px 0 8px; }
+  .stage { padding: 52px 0 4px; }
   .plate {
     background: var(--plate);
     border-radius: 15px;
@@ -144,10 +144,6 @@
   section > p { color: var(--muted); margin: 0 0 26px; max-width: 62ch; }
   section > p strong { color: var(--ink); font-weight: 500; }
 
-  .points { display: grid; gap: 30px; grid-template-columns: 1fr 1fr; margin-top: 8px; }
-  .points h3 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
-  .points p { margin: 0; color: var(--muted); font-size: 16px; }
-  @media (max-width: 620px) { .points { grid-template-columns: 1fr; } }
 
   figure { margin: 30px 0 0; }
   figure img {
@@ -161,28 +157,6 @@
     box-shadow: var(--shadow);
     border-radius: 12px;
   }
-
-  /* ---------- setup ---------- */
-  .steps { display: grid; gap: 22px; margin: 4px 0 0; padding: 0; list-style: none; }
-  .steps li {
-    display: grid; grid-template-columns: 22px 1fr; gap: 14px; align-items: start;
-  }
-  .steps .n {
-    font-size: 14px; font-weight: 600; color: var(--accent);
-    font-variant-numeric: tabular-nums; padding-top: 2px;
-  }
-  .steps h3 { font-size: 16.5px; font-weight: 600; margin: 0 0 3px; }
-  .steps p { margin: 0; color: var(--muted); font-size: 16px; }
-
-  /* ---------- cost table ---------- */
-  .costs { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 16px; }
-  .costs th, .costs td { text-align: left; padding: 11px 0; border-bottom: 1px solid var(--line); }
-  .costs th {
-    font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--faint); font-weight: 600;
-  }
-  .costs td:last-child, .costs th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-  .costs .who { font-weight: 500; }
 
   /* ---------- close ---------- */
   .close { text-align: left; padding: 76px 0 24px; border-top: 1px solid var(--line); }
@@ -237,128 +211,34 @@
         <div id="now">before anyone gets into the meeting.</div>
       </div>
     </div>
-    <p class="caption-note">The subtitles sit above everything, including full-screen video. Drag them anywhere.</p>
   </div>
 
   <section>
-    <h2>For the calls you can only half follow</h2>
     <p>
-      Half the room switches to Spanish. A client joins from São Paulo. A supplier's English
-      runs out right at the detail you needed. Relay reads whatever is coming out of your
-      speakers, so it works in Zoom, Meet, Teams or anything else, with
-      <strong>no bot joining the meeting</strong> and nothing for anyone else to notice.
+      Relay reads whatever is coming out of your speakers, so it works in Zoom, Meet, Teams
+      or anything else, with <strong>no bot joining the meeting</strong>. It tells voices
+      apart, keeps up when the room changes language, and stays readable over full-screen
+      video. Drag the subtitles wherever you want them.
     </p>
 
-    <div class="points">
-      <div>
-        <h3>Tells people apart</h3>
-        <p>Each line is tagged with the voice that said it, so a busy call stays readable when two people talk at once.</p>
-      </div>
-      <div>
-        <h3>Keeps up when the language changes</h3>
-        <p>Relay works out what is being spoken as it goes. If the room moves from Spanish to French, the subtitles move with it.</p>
-      </div>
-      <div>
-        <h3>Stays out of the way</h3>
-        <p>Drag the subtitles anywhere on screen. They never take focus, and they stay visible over full-screen apps.</p>
-      </div>
-      <div>
-        <h3>Nine languages, either direction</h3>
-        <p>Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese and English. Pick the one you read in.</p>
-      </div>
-    </div>
-
     <figure>
-      <img src="assets/subtitles.png" alt="Relay's subtitle overlay showing a two-person conversation, each speaker's lines in their own colour." width="1656" height="404">
-      <figcaption>Two people on a call, told apart by voice.</figcaption>
+      <img src="assets/subtitles.png" alt="Relay's subtitles showing a two-person conversation, each speaker in their own colour." width="1656" height="404">
+      <figcaption>Two people on a call, told apart by voice. Nine languages, either direction.</figcaption>
     </figure>
   </section>
 
   <section>
-    <h2>And anything else your Mac plays</h2>
+    <h2>What it costs</h2>
     <p>
-      A documentary with no subtitles. A lecture someone sent you. A voice note you have
-      listened to four times and still cannot make out. If it comes out of your speakers,
-      Relay can read it.
+      Relay translates using your own Anthropic or OpenAI account, so you pay them directly.
+      Speech becomes text on your Mac and only the words are sent, which keeps it to
+      <strong>a few cents an hour</strong>. There is a faster setting that streams the audio
+      instead, if you would rather words appeared mid sentence.
     </p>
-  </section>
-
-  <section>
-    <h2>Setting it up</h2>
-    <ol class="steps">
-      <li>
-        <span class="n">1</span>
-        <div>
-          <h3>Move Relay to Applications</h3>
-          <p>Relay lives in the menu bar. There is no window to keep track of.</p>
-        </div>
-      </li>
-      <li>
-        <span class="n">2</span>
-        <div>
-          <h3>Paste in a key</h3>
-          <p>Relay translates using your own Anthropic or OpenAI account, so you pay them directly at cost. Your key is kept in the macOS Keychain.</p>
-        </div>
-      </li>
-      <li>
-        <span class="n">3</span>
-        <div>
-          <h3>Press Start listening</h3>
-          <p>macOS asks once for permission to hear your Mac. After that, play something.</p>
-        </div>
-      </li>
-    </ol>
 
     <figure class="shot-light">
-      <img src="assets/menubar.png" alt="Relay's menu bar panel, showing the language it is translating to and a Start listening button." width="1200" height="944">
+      <img src="assets/menubar.png" alt="Relay's menu bar panel, showing the language it translates into and a Start listening button." width="1200" height="944">
       <figcaption>The whole app. Pick the language you read in, then press start.</figcaption>
-    </figure>
-  </section>
-
-  <section>
-    <h2>Set it up for the way you work</h2>
-    <p>
-      Relay can run two ways, and you can switch between them whenever you like.
-    </p>
-
-    <div class="points">
-      <div>
-        <h3>Cheap, and it stays on your Mac</h3>
-        <p>
-          Speech becomes text on your own machine, and only the words get sent for
-          translating. Lines appear as each sentence finishes. Costs a few cents an hour.
-        </p>
-      </div>
-      <div>
-        <h3>Instant, streamed live</h3>
-        <p>
-          The audio goes straight to OpenAI, which translates while the person is still
-          mid sentence. The fastest Relay gets, and the most expensive.
-        </p>
-      </div>
-    </div>
-
-    <table class="costs">
-      <thead>
-        <tr><th>Translating with</th><th>Lines appear</th><th>Roughly</th></tr>
-      </thead>
-      <tbody>
-        <tr><td class="who">OpenAI</td><td>End of sentence</td><td>4&cent; an hour</td></tr>
-        <tr><td class="who">Claude</td><td>End of sentence</td><td>19&cent; an hour</td></tr>
-        <tr><td class="who">OpenAI Realtime</td><td>Mid sentence</td><td>$2.04 an hour</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section>
-    <h2>See both at once</h2>
-    <p>
-      Relay can run two of them on the same audio and give each its own column. Watch
-      how they handle a real call, then keep whichever one you would rather read.
-    </p>
-    <figure>
-      <img src="assets/comparison.png" alt="Two columns of subtitles from different translation engines, running on the same audio." width="1800" height="252">
-      <figcaption>The same sentence, arriving twice.</figcaption>
     </figure>
   </section>
 
@@ -379,8 +259,8 @@
 </div>
 
 <script>
-  // The hero plate performs the product: a line of speech resolving into
-  // English, the way it does on screen.
+  // The plate performs the product rather than describing it: a line of speech
+  // resolving into the reader's language, the way it does on screen.
   const exchanges = [
     { said: "Spanish on the call",    prev: "I'll send the numbers over tomorrow morning,", now: "before anyone gets into the meeting." },
     { said: "French on the call",     prev: "That works for me.",                           now: "Could we push it to Thursday instead?" },
@@ -393,8 +273,7 @@
   const prev = document.getElementById('prev');
   const now = document.getElementById('now');
 
-  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!still) {
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     let index = 0;
     setInterval(() => {
       line.classList.add('fading');
