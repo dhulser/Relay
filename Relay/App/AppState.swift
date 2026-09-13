@@ -119,16 +119,26 @@ final class AppState: ObservableObject {
         provider.usesLocalSpeech && speechEngine == .whisper
     }
 
-    /// Run the selected provider and OpenAI Realtime on the same audio at
-    /// once, labelling every line with the engine that produced it. For
-    /// judging which to use — not something to leave on, since it pays for
-    /// Realtime's hourly rate on top of the normal cost.
-    @Published var compareEngines: Bool {
-        didSet { defaults.set(compareEngines, forKey: Self.compareKey) }
+    /// Run several engines on the same audio at once, each in its own column.
+    /// Costs every selected engine at the same time, so it is a thing you turn
+    /// on to decide with, not to leave on.
+    @Published var comparisonMode: Bool {
+        didSet { defaults.set(comparisonMode, forKey: Self.compareKey) }
     }
 
-    /// Comparing needs a second, different engine to compare against.
-    var canCompare: Bool { provider != .openaiRealtime }
+    /// Which engines a comparison runs. Two or more for the mode to do anything.
+    @Published var comparedProviders: Set<TranslationProvider> {
+        didSet {
+            defaults.set(comparedProviders.map(\.rawValue), forKey: Self.comparedKey)
+        }
+    }
+
+    /// Combined hourly cost of everything a comparison would run.
+    var comparisonCostSummary: String {
+        let running = activeProviders
+        guard running.count > 1 else { return "" }
+        return running.map(\.costPerHour).joined(separator: " + ")
+    }
 
     /// How many distinct voices to allow. 0 means "work it out", which is right
     /// for unknown content but will occasionally over-split; naming the real
@@ -182,27 +192,19 @@ final class AppState: ObservableObject {
     private static let whisperModelKey = "whisperModel"
     private static let labelSpeakersKey = "labelSpeakers"
     private static let expectedSpeakersKey = "expectedSpeakers"
-    private static let compareKey = "compareEngines"
+    private static let compareKey = "comparisonMode"
+    private static let comparedKey = "comparedProviders"
     private static let sourceKey = "sourceLanguage"
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
 
     private let capture = SystemAudioCaptureService()
-    private var engine: TranslationEngine?
+    private var lanes: [Lane] = []
 
-    /// The second engine in compare mode. Receives exactly the same buffers as
-    /// the first, so any difference in output is the engine, not the input.
-    private var comparisonEngine: TranslationEngine?
+    /// One recogniser shared by every local translator in the session.
+    private var sharedTranscriber: SpeechTranscribing?
 
-    let subtitles = SubtitleManager()
-
-    /// The rival engine writes here in compare mode. A separate manager rather
-    /// than one interleaved stream: each engine keeps its own history and
-    /// debounce, so the two columns stay readable while both are producing.
-    let comparisonSubtitles = SubtitleManager()
-
-    private lazy var subtitlePanel = SubtitlePanelController(
-        manager: subtitles, comparison: comparisonSubtitles)
+    private lazy var subtitlePanel = SubtitlePanelController()
 
     init() {
         let defaults = UserDefaults.standard
@@ -213,7 +215,10 @@ final class AppState: ObservableObject {
         whisperModel = defaults.string(forKey: Self.whisperModelKey).flatMap(WhisperModel.init) ?? .small
         labelSpeakers = defaults.bool(forKey: Self.labelSpeakersKey)
         expectedSpeakers = defaults.integer(forKey: Self.expectedSpeakersKey)
-        compareEngines = defaults.bool(forKey: Self.compareKey)
+        comparisonMode = defaults.bool(forKey: Self.compareKey)
+        let storedCompared = defaults.stringArray(forKey: Self.comparedKey) ?? []
+        let restored = Set(storedCompared.compactMap(TranslationProvider.init))
+        comparedProviders = restored.isEmpty ? [.claude, .openaiRealtime] : restored
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
@@ -225,8 +230,9 @@ final class AppState: ObservableObject {
             MainActor.assumeIsolated { self?.fail(with: error.localizedDescription, kind: error) }
         }
         capture.onAudioBuffer = { [weak self] buffer in
-            self?.engine?.receive(buffer)
-            self?.comparisonEngine?.receive(buffer)
+            guard let self else { return }
+            self.sharedTranscriber?.receive(buffer)
+            for lane in self.lanes { lane.realtime?.receive(buffer) }
         }
 
         reconcileSourceLanguage()
@@ -238,8 +244,30 @@ final class AppState: ObservableObject {
 
     // MARK: - Session control
 
+    /// One engine running in a session: where its output goes, and whichever
+    /// machinery produces it. Local providers share a transcriber and differ
+    /// only in translator; Realtime takes audio directly and has neither.
+    private struct Lane {
+        let provider: TranslationProvider
+        let stream: SubtitleStream
+        var translator: TextTranslating?
+        var realtime: OpenAIRealtimeService?
+        /// Speakers waiting between recognition and translation, so a label
+        /// stays with the line it came from.
+        var pendingSpeakers: [Int?] = []
+    }
+
+    /// Which engines this session will run. One normally; several when
+    /// comparison mode is on.
+    var activeProviders: [TranslationProvider] {
+        guard comparisonMode, comparedProviders.count >= 2 else { return [provider] }
+        return TranslationProvider.allCases.filter { comparedProviders.contains($0) }
+    }
+
     func start() {
-        Log.info(.app, "Start requested — \(provider.displayName), \(sourceLanguage.displayName) → \(targetLanguage.displayName)")
+        let providers = activeProviders
+        Log.info(.app, "Start requested — \(providers.map(\.shortLabel).joined(separator: " vs ")), "
+            + "\(sourceLanguage.displayName) → \(targetLanguage.displayName)")
         errorDetail = nil
         needsRelaunch = false
 
@@ -247,62 +275,41 @@ final class AppState: ObservableObject {
             status = .requestingPermission
             SystemAudioCaptureService.requestPermission()
             status = .permissionRequired
-            errorDetail = "Live Translator needs Screen Recording permission to capture system audio. "
-                + "Grant it in System Settings, then quit and reopen Live Translator."
+            errorDetail = "Relay needs Screen Recording permission to hear your Mac. "
+                + "Grant it in System Settings, then quit and reopen Relay."
             needsRelaunch = true
             Log.error(.app, "Screen Recording permission not granted")
             return
         }
 
-        let engine: TranslationEngine
+        // Every engine needs its key before anything starts, so a missing one
+        // fails immediately rather than half-way through a comparison.
+        for candidate in providers where KeychainService.loadAPIKey(for: candidate) == nil {
+            hasAPIKey = provider == candidate ? false : hasAPIKey
+            status = .missingAPIKey
+            errorDetail = providers.count > 1
+                ? "\(candidate.credentialName) needs an API key before it can be compared."
+                : "Add your API key in Settings to start translating."
+            Log.error(.app, "No API key for \(candidate.displayName)")
+            return
+        }
+
         do {
-            engine = try makeEngine()
-            try engine.start(source: sourceLanguage, target: targetLanguage)
+            try buildLanes(for: providers)
         } catch let error as EngineError {
-            if case .missingAPIKey = error {
-                hasAPIKey = false
-                status = .missingAPIKey
-            } else {
-                status = .error(error.localizedDescription)
-            }
+            status = .error(error.localizedDescription)
             errorDetail = error.localizedDescription
             Log.error(.app, error.localizedDescription)
+            teardownLanes()
             return
         } catch {
             fail(with: error.localizedDescription, kind: error)
             return
         }
 
-        let comparing = compareEngines && canCompare
-        SubtitleManager.setComparing(comparing)
-        let primaryLabel = comparing ? provider.shortLabel : nil
-        comparisonSubtitles.clear()
-
-        engine.onStateChange = { [weak self] state in
-            MainActor.assumeIsolated { self?.applyEngineState(state) }
-        }
-        engine.onPartialTranslation = { [weak self] text, speaker in
-            MainActor.assumeIsolated {
-                self?.subtitles.updatePartial(text, speaker: speaker, origin: primaryLabel)
-            }
-        }
-        engine.onFinalTranslation = { [weak self] text, speaker in
-            MainActor.assumeIsolated {
-                self?.subtitles.complete(text, speaker: speaker, origin: primaryLabel)
-                if comparing { Log.info(.compare, "[\(primaryLabel ?? "primary")] \(text)") }
-            }
-        }
-        engine.onFatalError = { [weak self] message in
-            MainActor.assumeIsolated { self?.fail(with: message, kind: nil) }
-        }
-        self.engine = engine
-
-        if comparing { startComparisonEngine() }
+        SubtitleManager.setComparing(providers.count > 1)
         status = .connecting
-        subtitles.clear()
-        subtitlePanel.show(comparing: comparing,
-                           primaryLabel: primaryLabel,
-                           rivalLabel: TranslationProvider.openaiRealtime.shortLabel)
+        subtitlePanel.show(streams: lanes.map(\.stream), labelled: providers.count > 1)
 
         Task {
             do {
@@ -317,13 +324,8 @@ final class AppState: ObservableObject {
         Log.info(.app, "Stop requested")
         status = .idle
         audioLevel = 0
-        engine?.stop()
-        engine = nil
-        comparisonEngine?.stop()
-        comparisonEngine = nil
+        teardownLanes()
         subtitlePanel.hide()
-        subtitles.clear()
-        comparisonSubtitles.clear()
         Task { await capture.stop() }
     }
 
@@ -331,25 +333,156 @@ final class AppState: ObservableObject {
         status.isRunning ? stop() : start()
     }
 
-    private func makeEngine() throws -> TranslationEngine {
-        guard let apiKey = KeychainService.loadAPIKey(for: provider) else {
-            throw EngineError.missingAPIKey(provider)
+    // MARK: - Lanes
+
+    private func buildLanes(for providers: [TranslationProvider]) throws {
+        teardownLanes()
+
+        let comparing = providers.count > 1
+        var built: [Lane] = []
+
+        for (index, candidate) in providers.enumerated() {
+            let stream = SubtitleStream(label: candidate.shortLabel, tintIndex: index)
+
+            if candidate == .openaiRealtime {
+                let engine = OpenAIRealtimeService()
+                try engine.start(source: sourceLanguage, target: targetLanguage)
+                var lane = Lane(provider: candidate, stream: stream, realtime: engine)
+                wire(realtime: engine, to: stream, comparing: comparing)
+                built.append(lane)
+                lane.pendingSpeakers = []
+            } else {
+                built.append(Lane(provider: candidate, stream: stream,
+                                  translator: try makeTranslator(for: candidate)))
+            }
         }
 
-        if provider == .openaiRealtime {
-            return OpenAIRealtimeService()
+        lanes = built
+
+        // One recogniser feeds every local translator: half the GPU work when
+        // comparing two of them, and — more importantly — both then translate
+        // exactly the same words, so the comparison is of translators alone.
+        if built.contains(where: { $0.translator != nil }) {
+            let transcriber = try makeTranscriber()
+            transcriber.onFinalText = { [weak self] result in
+                MainActor.assumeIsolated { self?.distribute(result) }
+            }
+            transcriber.onError = { [weak self] (error: Error) in
+                MainActor.assumeIsolated {
+                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self?.fail(with: message, kind: error)
+                }
+            }
+            sharedTranscriber = transcriber
+
+            Task {
+                do {
+                    try await transcriber.start(language: sourceLanguage.language)
+                    self.status = .listening
+                } catch {
+                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.fail(with: message, kind: error)
+                }
+            }
         }
 
-        let translator: TextTranslating = provider == .claude
-            ? ClaudeTranslator(apiKey: apiKey, model: claudeModel,
-                               source: sourceLanguage, target: targetLanguage)
-            : OpenAITextTranslator(apiKey: apiKey, model: openAIModel,
-                                   source: sourceLanguage, target: targetLanguage)
+        for (index, lane) in lanes.enumerated() where lane.translator != nil {
+            wire(translator: lane.translator!, laneIndex: index, comparing: comparing)
+        }
+    }
 
-        let transcriber = try makeTranscriber()
-        Log.info(.app, "Pipeline: \(speechEngine.displayName) → "
-            + "\(provider == .claude ? claudeModel.rawValue : openAIModel.rawValue)")
-        return LocalPipelineEngine(transcriber: transcriber, translator: translator)
+    /// Hands one recognised utterance to every local translator at once.
+    private func distribute(_ result: TranscriptionResult) {
+        for index in lanes.indices where lanes[index].translator != nil {
+            lanes[index].pendingSpeakers.append(result.speaker)
+            lanes[index].translator?.translate(result.text)
+        }
+    }
+
+    private func wire(translator: TextTranslating, laneIndex: Int, comparing: Bool) {
+        let stream = lanes[laneIndex].stream
+        let label = lanes[laneIndex].provider.shortLabel
+
+        translator.onPartial = { [weak self] text in
+            MainActor.assumeIsolated {
+                guard let self, laneIndex < self.lanes.count else { return }
+                stream.manager.updatePartial(text, speaker: self.lanes[laneIndex].pendingSpeakers.first ?? nil)
+            }
+        }
+        translator.onFinal = { [weak self] text in
+            MainActor.assumeIsolated {
+                guard let self, laneIndex < self.lanes.count else { return }
+                let speaker = self.lanes[laneIndex].pendingSpeakers.isEmpty
+                    ? nil : self.lanes[laneIndex].pendingSpeakers.removeFirst()
+                stream.manager.complete(text, speaker: speaker)
+                if comparing { Log.info(.compare, "[\(label)] \(text)") }
+            }
+        }
+        translator.onFatalError = { [weak self] message in
+            MainActor.assumeIsolated { self?.fail(with: message, kind: nil) }
+        }
+    }
+
+    private func wire(realtime: OpenAIRealtimeService, to stream: SubtitleStream, comparing: Bool) {
+        let label = TranslationProvider.openaiRealtime.shortLabel
+        realtime.onStateChange = { [weak self] state in
+            MainActor.assumeIsolated {
+                // Only let Realtime drive status when it is the only engine;
+                // in a comparison the local pipeline owns it.
+                guard let self, self.lanes.count <= 1 else { return }
+                self.applyEngineState(state)
+            }
+        }
+        realtime.onPartialTranslation = { text, _ in
+            MainActor.assumeIsolated { stream.manager.updatePartial(text) }
+        }
+        realtime.onFinalTranslation = { text, _ in
+            MainActor.assumeIsolated {
+                stream.manager.complete(text)
+                if comparing { Log.info(.compare, "[\(label)] \(text)") }
+            }
+        }
+        realtime.onFatalError = { [weak self] message in
+            MainActor.assumeIsolated {
+                // A failing comparison engine should not end the session.
+                guard let self else { return }
+                if self.lanes.count > 1 {
+                    Log.error(.compare, "\(label) stopped: \(message)")
+                } else {
+                    self.fail(with: message, kind: nil)
+                }
+            }
+        }
+    }
+
+    private func teardownLanes() {
+        for lane in lanes {
+            lane.translator?.cancel()
+            lane.realtime?.stop()
+            lane.stream.manager.clear()
+        }
+        lanes.removeAll()
+
+        if let transcriber = sharedTranscriber {
+            sharedTranscriber = nil
+            Task { await transcriber.stop() }
+        }
+    }
+
+    private func makeTranslator(for candidate: TranslationProvider) throws -> TextTranslating {
+        guard let apiKey = KeychainService.loadAPIKey(for: candidate) else {
+            throw EngineError.missingAPIKey(candidate)
+        }
+        switch candidate {
+        case .claude:
+            return ClaudeTranslator(apiKey: apiKey, model: claudeModel,
+                                    source: sourceLanguage, target: targetLanguage)
+        case .openai:
+            return OpenAITextTranslator(apiKey: apiKey, model: openAIModel,
+                                        source: sourceLanguage, target: targetLanguage)
+        case .openaiRealtime:
+            throw EngineError.setupFailed("Realtime takes audio directly and has no translator.")
+        }
     }
 
     private func makeTranscriber() throws -> SpeechTranscribing {
@@ -362,10 +495,11 @@ final class AppState: ObservableObject {
                     + "Open Settings to download it."
                 )
             }
-            return WhisperTranscriptionService(model: whisperModel,
-                                               modelURL: store.url(for: whisperModel),
-                                               speakers: makeSpeakerService(),
-                                               expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil)
+            return WhisperTranscriptionService(
+                model: whisperModel,
+                modelURL: store.url(for: whisperModel),
+                speakers: makeSpeakerService(),
+                expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil)
         case .apple:
             guard #available(macOS 26.0, *) else {
                 throw EngineError.setupFailed(
@@ -374,35 +508,6 @@ final class AppState: ObservableObject {
             }
             return SpeechTranscriptionService()
         }
-    }
-
-    /// Starts OpenAI Realtime alongside the selected provider. A failure here
-    /// ends the comparison only — the real session carries on, since losing the
-    /// experiment shouldn't cost you your subtitles.
-    private func startComparisonEngine() {
-        let rival = OpenAIRealtimeService()
-        do {
-            try rival.start(source: sourceLanguage, target: targetLanguage)
-        } catch {
-            Log.error(.compare, "Could not start the comparison engine: \(error.localizedDescription)")
-            return
-        }
-
-        let label = TranslationProvider.openaiRealtime.shortLabel
-        rival.onPartialTranslation = { [weak self] text, _ in
-            MainActor.assumeIsolated { self?.comparisonSubtitles.updatePartial(text, origin: label) }
-        }
-        rival.onFinalTranslation = { [weak self] text, _ in
-            MainActor.assumeIsolated {
-                self?.comparisonSubtitles.complete(text, origin: label)
-                Log.info(.compare, "[\(label)] \(text)")
-            }
-        }
-        rival.onFatalError = { message in
-            Log.error(.compare, "Comparison engine stopped: \(message)")
-        }
-        comparisonEngine = rival
-        Log.info(.compare, "Comparing \(provider.shortLabel) against \(label)")
     }
 
     /// Nil unless labelling is on and the model is present — the transcriber
@@ -473,13 +578,8 @@ final class AppState: ObservableObject {
 
         Log.error(.app, message)
         audioLevel = 0
-        engine?.stop()
-        engine = nil
-        comparisonEngine?.stop()
-        comparisonEngine = nil
+        teardownLanes()
         subtitlePanel.hide()
-        subtitles.clear()
-        comparisonSubtitles.clear()
         Task { await capture.stop() }
 
         if let kind, case CaptureError.permissionDenied = kind {

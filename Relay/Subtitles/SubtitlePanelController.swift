@@ -64,11 +64,8 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
 @MainActor
 final class SubtitlePanelController {
 
-    private let manager: SubtitleManager
-    private let comparison: SubtitleManager
-    private var comparing = false
-    private var primaryLabel = ""
-    private var rivalLabel = ""
+    private var streams: [SubtitleStream] = []
+    private var labelled = false
     private var panel: SubtitlePanel?
     private var cancellables: Set<AnyCancellable> = []
     private var moveObserver: NSObjectProtocol?
@@ -85,31 +82,27 @@ final class SubtitlePanelController {
     private static let originKey = "subtitlePanelOrigin"
     private static let defaultBottomInset: CGFloat = 120
 
-    init(manager: SubtitleManager, comparison: SubtitleManager) {
-        self.manager = manager
-        self.comparison = comparison
-    }
+    init() {}
 
     deinit {
         if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
     }
 
-    func show(comparing: Bool = false, primaryLabel: String? = nil, rivalLabel: String = "") {
-        // The two layouts are different widths, so a panel built for one cannot
-        // be reused for the other.
-        if comparing != self.comparing, panel != nil {
+    func show(streams: [SubtitleStream], labelled: Bool) {
+        // Layouts of different column counts are different widths, so a panel
+        // built for one cannot be reused for another.
+        if streams.count != self.streams.count || labelled != self.labelled, panel != nil {
             panel?.orderOut(nil)
             panel = nil
             cancellables.removeAll()
         }
-        self.comparing = comparing
-        self.primaryLabel = primaryLabel ?? ""
-        self.rivalLabel = rivalLabel
+        self.streams = streams
+        self.labelled = labelled
 
         sessionActive = true
         _ = existingOrNewPanel()
         updateVisibility()
-        Log.info(.subtitles, comparing ? "Overlay armed (comparing)" : "Overlay armed")
+        Log.info(.subtitles, labelled ? "Overlay armed (\(streams.count) engines)" : "Overlay armed")
     }
 
     func hide() {
@@ -124,7 +117,7 @@ final class SubtitlePanelController {
     private func existingOrNewPanel() -> SubtitlePanel {
         if let panel { return panel }
 
-        let width = SubtitleView.contentWidth(comparing: comparing) + (SubtitleView.margin * 2) + 44
+        let width = SubtitleView.contentWidth(columns: streams.count) + (SubtitleView.margin * 2) + 44
         let panel = SubtitlePanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 80))
 
         // sizingOptions is deliberately empty: with .intrinsicContentSize the
@@ -133,11 +126,8 @@ final class SubtitlePanelController {
         // lines are added. SwiftUI reports its height instead and we set the
         // frame ourselves.
         let hosting = DraggableHostingView(rootView: SubtitleView(
-            manager: manager,
-            comparison: comparison,
-            comparing: comparing,
-            primaryLabel: primaryLabel,
-            rivalLabel: rivalLabel,
+            streams: streams,
+            labelled: labelled,
             onHeightChange: { [weak self] height in
                 MainActor.assumeIsolated { self?.applyHeight(height) }
             }
@@ -177,22 +167,18 @@ final class SubtitlePanelController {
 
     /// Show the panel only while a session is running and there is text.
     private func observeContentChanges() {
-        manager.$current
-            .combineLatest(manager.$history)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in self?.updateVisibility() }
-            .store(in: &cancellables)
-
-        comparison.$current
-            .combineLatest(comparison.$history)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in self?.updateVisibility() }
-            .store(in: &cancellables)
+        for stream in streams {
+            stream.manager.$current
+                .combineLatest(stream.manager.$history)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _, _ in self?.updateVisibility() }
+                .store(in: &cancellables)
+        }
     }
 
     private func updateVisibility() {
         guard let panel else { return }
-        let shouldShow = sessionActive && !(manager.isEmpty && comparison.isEmpty)
+        let shouldShow = sessionActive && streams.contains { !$0.manager.isEmpty }
 
         if shouldShow, !panel.isVisible {
             panel.orderFrontRegardless()   // visible without activating the app

@@ -9,16 +9,22 @@ struct SettingsView: View {
     @State private var isEnteringKey = false
 
     var body: some View {
-        Form {
-            translationSection
-            languagesSection
-            if appState.provider.usesLocalSpeech { SpeechEngineSection() }
+        TabView {
+            Form {
+                translationSection
+                languagesSection
+                if appState.provider.usesLocalSpeech { SpeechEngineSection() }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Translation", systemImage: "character.bubble") }
+
+            ComparisonSettingsView()
+                .tabItem { Label("Comparison", systemImage: "rectangle.split.2x1") }
         }
-        .formStyle(.grouped)
         // A bounded height, not fixedSize: letting the form size to its content
         // made the window taller than the screen and pushed it under the menu
         // bar. The grouped form scrolls internally when it overflows.
-        .frame(width: 500, height: 540)
+        .frame(width: 520, height: 560)
         .onAppear { appState.refreshAPIKeyState() }
         .onChange(of: appState.provider) { _, _ in
             // The field holds a key for the provider that was selected a moment
@@ -71,15 +77,6 @@ struct SettingsView: View {
 
             apiKeyRow
 
-            if appState.canCompare {
-                Divider().padding(.vertical, 2)
-                Toggle("Compare against OpenAI Realtime", isOn: $appState.compareEngines)
-                Text("Runs both engines on the same audio and labels every line with the engine "
-                     + "that produced it. For deciding which to use — leaving it on pays "
-                     + "Realtime's $2.04 an hour on top of the usual cost.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
