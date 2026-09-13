@@ -145,19 +145,11 @@
   section > p strong { color: var(--ink); font-weight: 500; }
 
 
-  .ways { display: grid; gap: 30px; grid-template-columns: 1fr 1fr; margin: 30px 0 0; }
-  .ways h3 { font-size: 17px; font-weight: 600; margin: 0 0 7px; }
-  .ways p { margin: 0; color: var(--muted); font-size: 16px; }
-  .ways .meta {
-    display: block; margin-top: 9px; color: var(--faint); font-size: 14px;
-    letter-spacing: .03em; text-transform: uppercase; font-weight: 600;
-  }
-  @media (max-width: 620px) { .ways { grid-template-columns: 1fr; } }
 
-  .strip { margin: 34px 0 0; }
+  .strip { margin: 8px 0 0; }
   .strip img {
-    display: block; width: 100%; max-width: 420px; height: auto;
-    border-radius: 8px;
+    display: block; width: 100%; max-width: 380px; height: auto;
+    border-radius: 7px;
   }
 
   figure { margin: 30px 0 0; }
@@ -167,6 +159,7 @@
   }
   figcaption { color: var(--faint); font-size: 14.5px; margin-top: 12px; }
 
+  .shot-light { margin-top: 18px; }
   .shot-light img {
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
@@ -243,30 +236,13 @@
   </section>
 
   <section>
-    <h2>Two ways to run it</h2>
+    <h2>The whole app</h2>
     <p>
-      Relay translates using your own Anthropic or OpenAI account, so you pay them directly.
-      How it runs is up to you, and you can change it whenever.
+      Relay sits in the menu bar. Pick the language you read in, press start, and that is
+      all there is to it. It translates through your own Anthropic or OpenAI account, which
+      comes to <strong>a few cents an hour</strong>, and there is a setting that streams the
+      audio instead if you would rather the words turned up while someone is still speaking.
     </p>
-
-    <div class="ways">
-      <div>
-        <h3>Keep it on your Mac</h3>
-        <p>
-          Speech becomes text on your own machine, and only the words go out for translating.
-          Each line lands as the sentence finishes.
-        </p>
-        <span class="meta">A few cents an hour</span>
-      </div>
-      <div>
-        <h3>Stream it live</h3>
-        <p>
-          The audio goes straight up for translating, so the words arrive while the person
-          is still talking.
-        </p>
-        <span class="meta">The lowest latency Relay gets</span>
-      </div>
-    </div>
 
     <figure class="strip">
       <img src="assets/menubar-strip.png" alt="The macOS menu bar with Relay sitting among the other menu bar items." width="600" height="76">
@@ -274,7 +250,6 @@
 
     <figure class="shot-light">
       <img src="assets/menubar.png" alt="Relay's menu bar panel, showing the language it translates into and a Start listening button." width="1200" height="944">
-      <figcaption>Relay lives in the menu bar. Pick the language you read in, then press start.</figcaption>
     </figure>
   </section>
 
