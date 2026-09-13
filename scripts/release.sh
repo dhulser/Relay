@@ -199,8 +199,17 @@ if [ "$PUBLISH" = 1 ]; then
       --title "Relay $VERSION" --generate-notes
   fi
   echo "  ✓ https://github.com/dhulser/Relay/releases/tag/$TAG"
-  echo
-  echo "  Homebrew: copy dist/relay.rb to Casks/relay.rb in dhulser/homebrew-relay and push."
+
+  # The tap is a sibling checkout; push the cask there when it is present.
+  TAP="$ROOT/../homebrew-relay"
+  if [ -d "$TAP/.git" ]; then
+    cp "$DIST/relay.rb" "$TAP/Casks/relay.rb"
+    git -C "$TAP" add Casks/relay.rb
+    git -C "$TAP" commit -qm "Relay $VERSION" && git -C "$TAP" push -q
+    echo "  ✓ Homebrew cask pushed to dhulser/homebrew-relay"
+  else
+    echo "  Homebrew: copy dist/relay.rb to Casks/relay.rb in dhulser/homebrew-relay and push."
+  fi
 else
   echo
   echo "  To publish:  ./scripts/release.sh --publish"
