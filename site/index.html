@@ -1,5 +1,5 @@
 <title>Relay for Mac</title>
-<meta name="description" content="Live subtitles for anything playing on your Mac.">
+<meta name="description" content="Live subtitles in your language for calls and anything else playing on your Mac.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Nunito:wght@600;700&display=swap">
@@ -216,11 +216,10 @@
   </header>
 
   <div class="hero">
-    <h1>Subtitles for whatever your Mac is playing.</h1>
+    <h1>Follow the call, whatever language it's in.</h1>
     <p class="lede">
-      A Spanish documentary. A call where half the room switches to French. A voice note
-      from someone in São Paulo. Relay listens to your Mac and puts
-      <strong>readable English on screen while it plays</strong>.
+      Relay puts <strong>live subtitles on your screen, in your language</strong>, while the
+      call is happening. It does the same for anything else playing on your Mac.
     </p>
     <div class="actions">
       <a class="download" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">
@@ -232,46 +231,56 @@
 
   <div class="stage">
     <div class="plate">
-      <div class="said" id="said">Hearing Spanish</div>
+      <div class="said" id="said">Spanish on the call</div>
       <div class="line" id="line">
-        <div class="prev" id="prev">So I'll send the report over tomorrow morning,</div>
+        <div class="prev" id="prev">I'll send the numbers over tomorrow morning,</div>
         <div id="now">before anyone gets into the meeting.</div>
       </div>
     </div>
-    <p class="caption-note">The overlay sits above everything, including full-screen video. Drag it anywhere.</p>
+    <p class="caption-note">The subtitles sit above everything, including full-screen video. Drag them anywhere.</p>
   </div>
 
   <section>
-    <h2>It listens to your Mac, not your microphone</h2>
+    <h2>For the calls you can only half follow</h2>
     <p>
-      Whatever is coming out of your speakers is what Relay reads — a browser tab, a video call,
-      a file on your desktop. Nothing is recorded, and the audio keeps playing normally while
-      you read along.
+      Half the room switches to Spanish. A client joins from São Paulo. A supplier's English
+      runs out right at the detail you needed. Relay reads whatever is coming out of your
+      speakers, so it works in Zoom, Meet, Teams or anything else, with
+      <strong>no bot joining the meeting</strong> and nothing for anyone else to notice.
     </p>
 
     <div class="points">
       <div>
-        <h3>Knows who is speaking</h3>
-        <p>Tags each line with the voice that said it, so a conversation stays readable when people talk over each other.</p>
+        <h3>Tells people apart</h3>
+        <p>Each line is tagged with the voice that said it, so a busy call stays readable when two people talk at once.</p>
       </div>
       <div>
-        <h3>Follows the language</h3>
-        <p>Works out what is being spoken as it goes. If the room switches from Spanish to French, the subtitles keep up.</p>
+        <h3>Keeps up when the language changes</h3>
+        <p>Relay works out what is being spoken as it goes. If the room moves from Spanish to French, the subtitles move with it.</p>
       </div>
       <div>
-        <h3>Stays where you put it</h3>
-        <p>Drag the captions anywhere on screen. They never steal focus, and they sit above full-screen apps.</p>
+        <h3>Stays out of the way</h3>
+        <p>Drag the subtitles anywhere on screen. They never take focus, and they stay visible over full-screen apps.</p>
       </div>
       <div>
-        <h3>Nine languages</h3>
-        <p>Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese and English, in any direction.</p>
+        <h3>Nine languages, either direction</h3>
+        <p>Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese and English. Pick the one you read in.</p>
       </div>
     </div>
 
     <figure>
       <img src="assets/subtitles.png" alt="Relay's subtitle overlay showing a two-person conversation, each speaker's lines in their own colour." width="1656" height="404">
-      <figcaption>Two speakers, told apart by voice and coloured accordingly.</figcaption>
+      <figcaption>Two people on a call, told apart by voice.</figcaption>
     </figure>
+  </section>
+
+  <section>
+    <h2>And anything else your Mac plays</h2>
+    <p>
+      A documentary with no subtitles. A lecture someone sent you. A voice note you have
+      listened to four times and still cannot make out. If it comes out of your speakers,
+      Relay can read it.
+    </p>
   </section>
 
   <section>
@@ -281,61 +290,71 @@
         <span class="n">1</span>
         <div>
           <h3>Move Relay to Applications</h3>
-          <p>It lives in the menu bar. There is no window to keep track of.</p>
+          <p>Relay lives in the menu bar. There is no window to keep track of.</p>
         </div>
       </li>
       <li>
         <span class="n">2</span>
         <div>
           <h3>Paste in a key</h3>
-          <p>Relay uses your own Anthropic or OpenAI account for the translation, so you pay them directly and nothing goes through us. The key is kept in your Keychain.</p>
+          <p>Relay translates using your own Anthropic or OpenAI account, so you pay them directly at cost. Your key is kept in the macOS Keychain.</p>
         </div>
       </li>
       <li>
         <span class="n">3</span>
         <div>
           <h3>Press Start listening</h3>
-          <p>macOS will ask once for permission to hear your Mac. Then play something.</p>
+          <p>macOS asks once for permission to hear your Mac. After that, play something.</p>
         </div>
       </li>
     </ol>
 
     <figure class="shot-light">
       <img src="assets/menubar.png" alt="Relay's menu bar panel, showing the language it is translating to and a Start listening button." width="1200" height="944">
-      <figcaption>The whole app. Pick a language, press start.</figcaption>
+      <figcaption>The whole app. Pick the language you read in, then press start.</figcaption>
     </figure>
   </section>
 
   <section>
-    <h2>Your audio stays on your Mac</h2>
+    <h2>Set it up for the way you work</h2>
     <p>
-      Speech is turned into text on your own machine — that part never touches a network.
-      Only the words are sent off for translating, and only to the account you bring.
-      <strong>No recordings, no transcripts kept, no account to make.</strong>
+      Relay can run two ways, and you can switch between them whenever you like.
     </p>
+
+    <div class="points">
+      <div>
+        <h3>Cheap, and it stays on your Mac</h3>
+        <p>
+          Speech becomes text on your own machine, and only the words get sent for
+          translating. Lines appear as each sentence finishes. Costs a few cents an hour.
+        </p>
+      </div>
+      <div>
+        <h3>Instant, streamed live</h3>
+        <p>
+          The audio goes straight to OpenAI, which translates while the person is still
+          mid sentence. The fastest Relay gets, and the most expensive.
+        </p>
+      </div>
+    </div>
 
     <table class="costs">
       <thead>
-        <tr><th>Translating with</th><th>Roughly</th></tr>
+        <tr><th>Translating with</th><th>Lines appear</th><th>Roughly</th></tr>
       </thead>
       <tbody>
-        <tr><td class="who">OpenAI</td><td>4&cent; an hour</td></tr>
-        <tr><td class="who">Claude</td><td>19&cent; an hour</td></tr>
-        <tr><td class="who">OpenAI Realtime</td><td>$2.04 an hour</td></tr>
+        <tr><td class="who">OpenAI</td><td>End of sentence</td><td>4&cent; an hour</td></tr>
+        <tr><td class="who">Claude</td><td>End of sentence</td><td>19&cent; an hour</td></tr>
+        <tr><td class="who">OpenAI Realtime</td><td>Mid sentence</td><td>$2.04 an hour</td></tr>
       </tbody>
     </table>
-    <p style="margin-top:16px; font-size:15.5px;">
-      The first two recognise speech on your Mac and send only text. Realtime streams the
-      audio itself to OpenAI, which is faster — words appear mid-sentence rather than at
-      the end — and costs accordingly.
-    </p>
   </section>
 
   <section>
-    <h2>Not sure which to use? Run them side by side.</h2>
+    <h2>See both at once</h2>
     <p>
-      Relay can run two at once on the same audio and show you both, so you can watch
-      them keep up — or not — and decide with your own eyes.
+      Relay can run two of them on the same audio and give each its own column. Watch
+      how they handle a real call, then keep whichever one you would rather read.
     </p>
     <figure>
       <img src="assets/comparison.png" alt="Two columns of subtitles from different translation engines, running on the same audio." width="1800" height="252">
@@ -344,7 +363,7 @@
   </section>
 
   <div class="close">
-    <h2 style="font-size:31px; margin-bottom:18px;">Try it on something you couldn't watch before.</h2>
+    <h2 style="font-size:31px; margin-bottom:18px;">Put it on your next call.</h2>
     <div class="actions">
       <a class="download" href="https://github.com/dhulser/Relay/releases/latest/download/Relay.dmg">
         Download for Mac
@@ -356,7 +375,6 @@
   <footer>
     <a href="https://github.com/dhulser/Relay">Source on GitHub</a>
     <a href="https://github.com/dhulser/Relay/issues">Report a problem</a>
-    <span>Made in Durham, NC</span>
   </footer>
 </div>
 
@@ -364,10 +382,10 @@
   // The hero plate performs the product: a line of speech resolving into
   // English, the way it does on screen.
   const exchanges = [
-    { said: "Hearing Spanish", prev: "So I'll send the report over tomorrow morning,", now: "before anyone gets into the meeting." },
-    { said: "Hearing French",  prev: "That works for me —",                             now: "could we push it to Thursday instead?" },
-    { said: "Hearing Japanese", prev: "Thursday is fine.",                              now: "I'll let the rest of the team know." },
-    { said: "Hearing Portuguese", prev: "One more thing before we finish —",            now: "has anyone looked at the numbers from June?" }
+    { said: "Spanish on the call",    prev: "I'll send the numbers over tomorrow morning,", now: "before anyone gets into the meeting." },
+    { said: "French on the call",     prev: "That works for me.",                           now: "Could we push it to Thursday instead?" },
+    { said: "Japanese on the call",   prev: "Thursday is fine.",                            now: "I'll let the rest of the team know." },
+    { said: "Portuguese on the call", prev: "One more thing before we finish.",             now: "Has anyone looked at the numbers from June?" }
   ];
 
   const said = document.getElementById('said');
