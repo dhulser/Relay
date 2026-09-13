@@ -195,7 +195,14 @@ final class AppState: ObservableObject {
     private var comparisonEngine: TranslationEngine?
 
     let subtitles = SubtitleManager()
-    private lazy var subtitlePanel = SubtitlePanelController(manager: subtitles)
+
+    /// The rival engine writes here in compare mode. A separate manager rather
+    /// than one interleaved stream: each engine keeps its own history and
+    /// debounce, so the two columns stay readable while both are producing.
+    let comparisonSubtitles = SubtitleManager()
+
+    private lazy var subtitlePanel = SubtitlePanelController(
+        manager: subtitles, comparison: comparisonSubtitles)
 
     init() {
         let defaults = UserDefaults.standard
@@ -269,6 +276,7 @@ final class AppState: ObservableObject {
         let comparing = compareEngines && canCompare
         SubtitleManager.setComparing(comparing)
         let primaryLabel = comparing ? provider.shortLabel : nil
+        comparisonSubtitles.clear()
 
         engine.onStateChange = { [weak self] state in
             MainActor.assumeIsolated { self?.applyEngineState(state) }
@@ -292,7 +300,9 @@ final class AppState: ObservableObject {
         if comparing { startComparisonEngine() }
         status = .connecting
         subtitles.clear()
-        subtitlePanel.show()
+        subtitlePanel.show(comparing: comparing,
+                           primaryLabel: primaryLabel,
+                           rivalLabel: TranslationProvider.openaiRealtime.shortLabel)
 
         Task {
             do {
@@ -313,6 +323,7 @@ final class AppState: ObservableObject {
         comparisonEngine = nil
         subtitlePanel.hide()
         subtitles.clear()
+        comparisonSubtitles.clear()
         Task { await capture.stop() }
     }
 
@@ -379,11 +390,11 @@ final class AppState: ObservableObject {
 
         let label = TranslationProvider.openaiRealtime.shortLabel
         rival.onPartialTranslation = { [weak self] text, _ in
-            MainActor.assumeIsolated { self?.subtitles.updatePartial(text, origin: label) }
+            MainActor.assumeIsolated { self?.comparisonSubtitles.updatePartial(text, origin: label) }
         }
         rival.onFinalTranslation = { [weak self] text, _ in
             MainActor.assumeIsolated {
-                self?.subtitles.complete(text, origin: label)
+                self?.comparisonSubtitles.complete(text, origin: label)
                 Log.info(.compare, "[\(label)] \(text)")
             }
         }
@@ -468,6 +479,7 @@ final class AppState: ObservableObject {
         comparisonEngine = nil
         subtitlePanel.hide()
         subtitles.clear()
+        comparisonSubtitles.clear()
         Task { await capture.stop() }
 
         if let kind, case CaptureError.permissionDenied = kind {

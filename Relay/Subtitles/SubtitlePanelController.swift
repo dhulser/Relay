@@ -65,6 +65,10 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
 final class SubtitlePanelController {
 
     private let manager: SubtitleManager
+    private let comparison: SubtitleManager
+    private var comparing = false
+    private var primaryLabel = ""
+    private var rivalLabel = ""
     private var panel: SubtitlePanel?
     private var cancellables: Set<AnyCancellable> = []
     private var moveObserver: NSObjectProtocol?
@@ -81,19 +85,31 @@ final class SubtitlePanelController {
     private static let originKey = "subtitlePanelOrigin"
     private static let defaultBottomInset: CGFloat = 120
 
-    init(manager: SubtitleManager) {
+    init(manager: SubtitleManager, comparison: SubtitleManager) {
         self.manager = manager
+        self.comparison = comparison
     }
 
     deinit {
         if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
     }
 
-    func show() {
+    func show(comparing: Bool = false, primaryLabel: String? = nil, rivalLabel: String = "") {
+        // The two layouts are different widths, so a panel built for one cannot
+        // be reused for the other.
+        if comparing != self.comparing, panel != nil {
+            panel?.orderOut(nil)
+            panel = nil
+            cancellables.removeAll()
+        }
+        self.comparing = comparing
+        self.primaryLabel = primaryLabel ?? ""
+        self.rivalLabel = rivalLabel
+
         sessionActive = true
         _ = existingOrNewPanel()
         updateVisibility()
-        Log.info(.subtitles, "Overlay armed")
+        Log.info(.subtitles, comparing ? "Overlay armed (comparing)" : "Overlay armed")
     }
 
     func hide() {
@@ -108,7 +124,7 @@ final class SubtitlePanelController {
     private func existingOrNewPanel() -> SubtitlePanel {
         if let panel { return panel }
 
-        let width = SubtitleView.maximumWidth + (SubtitleView.margin * 2) + 44
+        let width = SubtitleView.contentWidth(comparing: comparing) + (SubtitleView.margin * 2) + 44
         let panel = SubtitlePanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 80))
 
         // sizingOptions is deliberately empty: with .intrinsicContentSize the
@@ -116,9 +132,16 @@ final class SubtitlePanelController {
         // itself, anchored top-left, which walks the panel down the screen as
         // lines are added. SwiftUI reports its height instead and we set the
         // frame ourselves.
-        let hosting = DraggableHostingView(rootView: SubtitleView(manager: manager) { [weak self] height in
-            MainActor.assumeIsolated { self?.applyHeight(height) }
-        })
+        let hosting = DraggableHostingView(rootView: SubtitleView(
+            manager: manager,
+            comparison: comparison,
+            comparing: comparing,
+            primaryLabel: primaryLabel,
+            rivalLabel: rivalLabel,
+            onHeightChange: { [weak self] height in
+                MainActor.assumeIsolated { self?.applyHeight(height) }
+            }
+        ))
         hosting.sizingOptions = []
         hosting.frame = NSRect(x: 0, y: 0, width: width, height: 80)
         hosting.autoresizingMask = [.width, .height]
@@ -159,11 +182,17 @@ final class SubtitlePanelController {
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in self?.updateVisibility() }
             .store(in: &cancellables)
+
+        comparison.$current
+            .combineLatest(comparison.$history)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in self?.updateVisibility() }
+            .store(in: &cancellables)
     }
 
     private func updateVisibility() {
         guard let panel else { return }
-        let shouldShow = sessionActive && !manager.isEmpty
+        let shouldShow = sessionActive && !(manager.isEmpty && comparison.isEmpty)
 
         if shouldShow, !panel.isVisible {
             panel.orderFrontRegardless()   // visible without activating the app
