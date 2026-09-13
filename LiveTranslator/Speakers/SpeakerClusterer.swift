@@ -6,12 +6,21 @@ import Foundation
 /// becomes Speaker 1, and later speech close enough to it is attributed there
 /// too.
 ///
-/// The design is deliberately biased against inventing speakers. Measured on
-/// real clips, a *different* voice scores ~0.1 no matter how little audio there
-/// is, while the *same* voice drops from ~0.91 to ~0.58 as the clip shortens
-/// from 4s to 0.4s. So a low score means "not enough audio" far more often than
-/// it means "somebody new", and treating every low score as a new person is
-/// what splits two people into five.
+/// Measured cosine similarities, which is where every constant here comes from:
+///
+///   same voice, 2s+ clip      0.84 - 0.93
+///   same voice, 0.4s clip     0.58
+///   different but similar     0.33 - 0.44   (two female voices, same language)
+///   different and dissimilar  0.06 - 0.16   (female vs male)
+///
+/// The similar-voice band is the one that matters: a threshold tuned on the
+/// easy case merges two people who happen to sound alike. The threshold sits
+/// above 0.44 and below 0.58, so it separates similar voices without splitting
+/// one person across a short clip.
+///
+/// Clip length is handled separately. A short clip is still *matched* against
+/// known speakers — that is reliable — but may not *create* one, since a low
+/// score on half a second of audio says more about the clip than the speaker.
 final class SpeakerClusterer {
 
     private struct Speaker {
@@ -30,14 +39,14 @@ final class SpeakerClusterer {
 
     /// - Parameters:
     ///   - threshold: cosine similarity above which a voiceprint joins an
-    ///     existing speaker. Well above the ~0.16 a different voice scores, and
-    ///     well below the ~0.85 the same voice scores on a decent clip.
+    ///     existing speaker. Sits between the 0.44 two similar voices reach and
+    ///     the 0.58 one voice scores against itself on a short clip.
     ///   - stickiness: bonus given to whoever spoke last. Conversation comes in
     ///     runs, so a borderline clip belongs to the current speaker more often
     ///     than to a new one.
     ///   - maximum: hard cap on distinct speakers. Once reached, everything
     ///     joins its nearest match.
-    init(threshold: Float = 0.35, stickiness: Float = 0.06, maximum: Int = 6) {
+    init(threshold: Float = 0.55, stickiness: Float = 0.04, maximum: Int = 6) {
         self.threshold = threshold
         self.stickiness = stickiness
         self.maximum = maximum
@@ -52,7 +61,11 @@ final class SpeakerClusterer {
     }
 
     /// Returns the 1-based speaker number for this voiceprint.
-    func assign(_ embedding: [Float]) -> Int {
+    ///
+    /// - Parameter canCreateSpeaker: false for clips too short to trust as
+    ///   evidence of someone new. Such a clip is still matched against known
+    ///   speakers; it just cannot invent one.
+    func assign(_ embedding: [Float], canCreateSpeaker: Bool = true) -> Int {
         let unit = Self.normalized(embedding)
         guard !unit.isEmpty else { return lastAssigned ?? 1 }
 
@@ -67,18 +80,29 @@ final class SpeakerClusterer {
             }
         }
 
-        let canAddSpeaker = speakers.count < maximum
-        if bestIndex >= 0, bestScore >= threshold || !canAddSpeaker {
+        let canAddSpeaker = canCreateSpeaker && speakers.count < maximum
+        let isGenuineMatch = bestIndex >= 0 && bestScore >= threshold
+
+        if isGenuineMatch || (bestIndex >= 0 && !canAddSpeaker) {
             var speaker = speakers[bestIndex]
-            // Running mean keeps the centroid representative as more of a
-            // person's speech arrives, rather than anchoring on their first
-            // clip — which might have been half a word.
-            let n = Float(speaker.count)
-            speaker.centroid = Self.normalized(
-                zip(speaker.centroid, unit).map { ($0 * n + $1) / (n + 1) }
-            )
-            speaker.count += 1
-            speakers[bestIndex] = speaker
+
+            // Only learn from a real match. A clip that joined merely because
+            // it wasn't allowed to create a speaker is a guess, and folding it
+            // in would drag this centroid toward a voice that isn't this
+            // speaker — which then swallows the real second speaker when they
+            // do get a long enough clip.
+            if isGenuineMatch {
+                // Running mean keeps the centroid representative as more of a
+                // person's speech arrives, rather than anchoring on their first
+                // clip — which might have been half a word.
+                let n = Float(speaker.count)
+                speaker.centroid = Self.normalized(
+                    zip(speaker.centroid, unit).map { ($0 * n + $1) / (n + 1) }
+                )
+                speaker.count += 1
+                speakers[bestIndex] = speaker
+            }
+
             lastAssigned = speaker.id
             return speaker.id
         }

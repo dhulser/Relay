@@ -61,9 +61,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// Whisper invents text on silence; this filters those segments out.
     private static let noSpeechCeiling: Float = 0.6
 
-    /// Minimum speech needed for a trustworthy voiceprint. Measured: the same
-    /// voice scores 0.81 against itself at 1.5s but only 0.58 at 0.4s, so a
-    /// shorter clip says more about the clip than the speaker.
+    /// Minimum speech before a clip may introduce a *new* speaker. Measured:
+    /// the same voice scores 0.81 against itself at 1.5s but only 0.58 at 0.4s,
+    /// so a short clip that matches nobody is usually just short. Shorter clips
+    /// are still matched against speakers already known.
     private static let minimumSpeakerAudio = 1.2
 
     private var phrase: [Float] = []
@@ -242,11 +243,14 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             var speaker: Int?
             if let speakers {
                 let duration = Double(samples.count) / Double(Self.sampleRate)
-                if duration >= Self.minimumSpeakerAudio, let embedding = speakers.embed(samples) {
-                    speaker = self.clusterer.assign(embedding)
+                if let embedding = speakers.embed(samples) {
+                    // Short clips still get matched — that part is reliable.
+                    // They just may not introduce someone new.
+                    speaker = self.clusterer.assign(
+                        embedding,
+                        canCreateSpeaker: duration >= Self.minimumSpeakerAudio
+                    )
                 } else {
-                    // Too short to judge. Attributing it to whoever is already
-                    // talking is right far more often than inventing a speaker.
                     speaker = self.clusterer.inheritLastSpeaker()
                 }
             }

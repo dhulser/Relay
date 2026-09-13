@@ -94,6 +94,54 @@ final class SpeakerClusteringTests: XCTestCase {
         XCTAssertEqual(clusterer.knownSpeakers, 1)
     }
 
+    /// The case that matters, and the one a threshold tuned on easy audio gets
+    /// wrong: two voices of the same gender and language, which score ~0.4
+    /// against each other rather than the ~0.1 a female/male pair does.
+    func testSimilarVoicesStillSeparate() throws {
+        let service = try makeService()
+        let clusterer = SpeakerClusterer()
+
+        var assigned: [String: Int] = [:]
+        for name in ["similar-f1a", "similar-f2a", "similar-f1b", "similar-f2b"] {
+            let embedding = try XCTUnwrap(service.embed(samples(name)), "no embedding for \(name)")
+            assigned[name] = clusterer.assign(embedding)
+        }
+
+        XCTAssertEqual(assigned["similar-f1a"], assigned["similar-f1b"],
+                       "one voice split across two speakers")
+        XCTAssertEqual(assigned["similar-f2a"], assigned["similar-f2b"],
+                       "one voice split across two speakers")
+        XCTAssertNotEqual(assigned["similar-f1a"], assigned["similar-f2a"],
+                          "two similar voices merged into one speaker")
+        XCTAssertEqual(clusterer.knownSpeakers, 2)
+    }
+
+    /// A short clip may not introduce someone new, but must still be matched to
+    /// whoever it actually sounds like — otherwise a second speaker whose
+    /// phrases are all short is never discovered.
+    func testShortClipsMatchButCannotCreateSpeakers() throws {
+        let service = try makeService()
+        let clusterer = SpeakerClusterer()
+
+        let first = clusterer.assign(try XCTUnwrap(service.embed(samples("similar-f1a"))))
+
+        // A different voice arriving on an untrusted clip joins the existing
+        // speaker rather than creating one.
+        let untrusted = clusterer.assign(
+            try XCTUnwrap(service.embed(samples("similar-f2a"))), canCreateSpeaker: false)
+        XCTAssertEqual(untrusted, first, "a short clip must not invent a speaker")
+        XCTAssertEqual(clusterer.knownSpeakers, 1)
+
+        // The same voice on a trusted clip does create one…
+        let second = clusterer.assign(try XCTUnwrap(service.embed(samples("similar-f2b"))))
+        XCTAssertNotEqual(second, first)
+
+        // …and now a short clip from that voice matches it correctly.
+        let shortMatch = clusterer.assign(
+            try XCTUnwrap(service.embed(samples("similar-f2a"))), canCreateSpeaker: false)
+        XCTAssertEqual(shortMatch, second, "a short clip must still match the right speaker")
+    }
+
     /// A hard cap is the reliable fix when the user knows the count: no amount
     /// of ambiguous audio may invent a third voice.
     func testSpeakerCapIsNeverExceeded() throws {
