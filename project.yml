@@ -69,10 +69,13 @@ targets:
         Debug:
           CODE_SIGN_IDENTITY: "Apple Development"
           OTHER_CODE_SIGN_FLAGS: "--timestamp=none"
-        # Release is what ships: Developer ID plus a secure timestamp, which
-        # notarization requires.
+        # Release is what ships. Notarization rejects a build without a secure
+        # timestamp, and rejects one carrying get-task-allow — the entitlement
+        # that permits attaching a debugger, which Xcode injects by default.
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp"
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
   LiveTranslatorTests:
     type: bundle.unit-test
