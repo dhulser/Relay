@@ -163,14 +163,9 @@ rm -f "$ZIP"
 
 # ---------------------------------------------------------------- package
 step "Building the disk image"
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"   # drag-to-install target
-
-rm -f "$DMG"
-hdiutil create -volname "Relay" -srcfolder "$STAGE" \
-  -ov -format UDZO "$DMG" >/dev/null
+# make-dmg.sh lays out the Finder window (background, arrow, icon positions,
+# volume icon) and compresses the result.
+"$ROOT/scripts/make-dmg.sh" "$APP" "$DMG"
 
 # The image needs its own signature, not just a notarization ticket —
 # Gatekeeper checks the disk image as a code object when it is opened.
