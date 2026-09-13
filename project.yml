@@ -1,4 +1,4 @@
-name: LiveTranslator
+name: Relay
 
 options:
   bundleIdPrefix: co.kevel
@@ -8,11 +8,11 @@ options:
   groupSortPosition: top
 
 targets:
-  LiveTranslator:
+  Relay:
     type: application
     platform: macOS
     sources:
-      - path: LiveTranslator
+      - path: Relay
     dependencies:
       - sdk: Accelerate.framework
       - sdk: Metal.framework
@@ -23,14 +23,14 @@ targets:
         embed: true
         codeSign: true
     entitlements:
-      path: LiveTranslator/LiveTranslator.entitlements
+      path: Relay/Relay.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
     info:
-      path: LiveTranslator/Info.plist
+      path: Relay/Info.plist
       properties:
-        CFBundleName: Live Translator
+        CFBundleName: Relay
         CFBundleDisplayName: Live Translator
         # Menu-bar-only app: no Dock icon, no main window.
         LSUIElement: true
@@ -38,8 +38,8 @@ targets:
         NSHumanReadableCopyright: ""
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.LiveTranslator
-        PRODUCT_NAME: LiveTranslator
+        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.Relay
+        PRODUCT_NAME: Relay
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
         # Manual signing with the existing "Apple Development" identity. A stable
@@ -58,7 +58,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         # Vendored whisper.cpp — see scripts/build-whisper.sh to rebuild.
-        SWIFT_OBJC_BRIDGING_HEADER: LiveTranslator/Whisper/WhisperBridge.h
+        SWIFT_OBJC_BRIDGING_HEADER: Relay/Whisper/WhisperBridge.h
         HEADER_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/include
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/lib
         OTHER_LDFLAGS: -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lc++
@@ -77,7 +77,7 @@ targets:
           OTHER_CODE_SIGN_FLAGS: "--timestamp"
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
-  LiveTranslatorTests:
+  RelayTests:
     type: bundle.unit-test
     platform: macOS
     sources:
@@ -85,10 +85,10 @@ targets:
       - path: Tests/Fixtures
         buildPhase: resources
     dependencies:
-      - target: LiveTranslator
+      - target: Relay
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.LiveTranslatorTests
+        PRODUCT_BUNDLE_IDENTIFIER: co.kevel.RelayTests
         DEVELOPMENT_TEAM: 4PJ4624484
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Apple Development"
@@ -100,14 +100,14 @@ targets:
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/lib
 
 schemes:
-  LiveTranslator:
+  Relay:
     build:
       targets:
-        LiveTranslator: all
-        LiveTranslatorTests: [test]
+        Relay: all
+        RelayTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - LiveTranslatorTests
+        - RelayTests

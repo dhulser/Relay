@@ -29,7 +29,10 @@ final class ModelStore<Model: DownloadableModel>: ObservableObject {
     /// need it without hopping to the main actor.
     nonisolated static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("LiveTranslator/Models", isDirectory: true)
+        // Keyed by bundle identifier, not product name: another app already
+        // owns ~/Library/Application Support/Relay on some machines, and
+        // "Relay" is a common enough name that it will happen again.
+        return base.appendingPathComponent("co.kevel.Relay/Models", isDirectory: true)
     }
 
     init(category: LogCategory) {

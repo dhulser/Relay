@@ -6,7 +6,10 @@ import Security
 /// Keys are never written to disk by this app, never logged, and never
 /// embedded in source.
 enum KeychainService {
-    private static let service = "co.kevel.LiveTranslator"
+    private static let service = "co.kevel.Relay"
+    /// Keys saved before the app was renamed. Read once and migrated, so the
+    /// rename doesn't quietly lose someone's API key.
+    private static let legacyService = "co.kevel.LiveTranslator"
 
     private static func baseQuery(_ account: String) -> [String: Any] {
         [
@@ -43,7 +46,24 @@ enum KeychainService {
     }
 
     static func loadAPIKey(for provider: TranslationProvider) -> String? {
-        var query = baseQuery(provider.keychainAccount)
+        if let key = read(account: provider.keychainAccount, service: service) { return key }
+
+        // Fall back to the pre-rename item, then move it across so this only
+        // ever happens once.
+        guard let legacy = read(account: provider.keychainAccount, service: legacyService) else {
+            return nil
+        }
+        Log.info(.keychain, "Migrating \(provider.displayName) key from the previous app name")
+        saveAPIKey(legacy, for: provider)
+        return legacy
+    }
+
+    private static func read(account: String, service: String) -> String? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 

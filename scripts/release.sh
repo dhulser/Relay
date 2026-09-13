@@ -1,7 +1,7 @@
 #!/bin/bash
-# Build, notarize, staple, and package Live Translator for distribution.
+# Build, notarize, staple, and package Relay for distribution.
 #
-# Produces dist/LiveTranslator.dmg — a signed, notarized disk image that opens
+# Produces dist/Relay.dmg — a signed, notarized disk image that opens
 # on any Apple Silicon Mac without Gatekeeper warnings.
 #
 # One-time setup:
@@ -17,8 +17,8 @@ set -euo pipefail
 PROFILE="${NOTARY_PROFILE:-notary}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
-APP="$ROOT/build/Build/Products/Release/LiveTranslator.app"
-DMG="$DIST/LiveTranslator.dmg"
+APP="$ROOT/build/Build/Products/Release/Relay.app"
+DMG="$DIST/Relay.dmg"
 
 step() { printf "\n\033[1m▸ %s\033[0m\n" "$1"; }
 fail() { printf "\n\033[31m✗ %s\033[0m\n" "$1" >&2; exit 1; }
@@ -62,7 +62,7 @@ echo "  ✓ notarytool credential '$PROFILE'"
 step "Building Release"
 cd "$ROOT"
 xcodegen generate >/dev/null
-xcodebuild -project LiveTranslator.xcodeproj -scheme LiveTranslator \
+xcodebuild -project Relay.xcodeproj -scheme Relay \
   -configuration Release -derivedDataPath build build 2>&1 | grep -E "error:|BUILD" || true
 [ -d "$APP" ] || fail "Build produced no app bundle."
 
@@ -96,7 +96,7 @@ esac
 # validates offline even after someone drags it out of the DMG.
 step "Notarizing the app"
 mkdir -p "$DIST"
-ZIP="$DIST/LiveTranslator.zip"
+ZIP="$DIST/Relay.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
 notarize "$ZIP"
 xcrun stapler staple "$APP"
@@ -110,7 +110,7 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"   # drag-to-install target
 
 rm -f "$DMG"
-hdiutil create -volname "Live Translator" -srcfolder "$STAGE" \
+hdiutil create -volname "Relay" -srcfolder "$STAGE" \
   -ov -format UDZO "$DMG" >/dev/null
 
 # The image needs its own signature, not just a notarization ticket —

@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import LiveTranslator
+@testable import Relay
 
 final class AudioConverterTests: XCTestCase {
 

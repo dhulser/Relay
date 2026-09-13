@@ -1,4 +1,4 @@
-# Live Translator
+# Relay
 
 A menu-bar app that puts live translated subtitles on screen for whatever audio
 is playing on your Mac. Point it at a Spanish YouTube video and read English
@@ -52,7 +52,7 @@ longer than 1.4s draws a short rule instead.
 ### Speech models
 
 Whisper models download on demand into
-`~/Library/Application Support/LiveTranslator/Models`.
+`~/Library/Application Support/co.kevel.Relay/Models`.
 `Small` (466 MB) is the default and the right balance; `Base` (142 MB) is faster
 but guesses more on noisy audio; `Medium` (1.5 GB) is the most accurate.
 
@@ -82,7 +82,7 @@ so captions don't flicker as tokens arrive.
 
 Builds Release, notarizes and staples the app, wraps it in a drag-to-install
 disk image, notarizes that too, and verifies the result the way Gatekeeper
-will. Output: `dist/LiveTranslator.dmg`.
+will. Output: `dist/Relay.dmg`.
 
 Needs a **Developer ID Application** certificate and a notarytool credential:
 
@@ -101,7 +101,7 @@ Requires Xcode 26+ and [xcodegen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 xcodegen generate
-xcodebuild -project LiveTranslator.xcodeproj -scheme LiveTranslator \
+xcodebuild -project Relay.xcodeproj -scheme Relay \
   -configuration Release -derivedDataPath build build
 ```
 
@@ -133,7 +133,7 @@ speaker embeddings. To change the pinned version (currently `v1.13.8`):
 ## Debugging
 
 ```bash
-log stream --style compact --predicate 'subsystem == "co.kevel.LiveTranslator"'
+log stream --style compact --predicate 'subsystem == "co.kevel.Relay"'
 ```
 
 Every stage is traced: `[Audio]` capture and format, `[Whisper]` or `[Speech]`
@@ -143,7 +143,7 @@ translation, and `[Subtitles]` for what reaches the screen.
 ## Tests
 
 ```bash
-xcodebuild test -project LiveTranslator.xcodeproj -scheme LiveTranslator \
+xcodebuild test -project Relay.xcodeproj -scheme Relay \
   -configuration Debug -derivedDataPath build
 ```
 

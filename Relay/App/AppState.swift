@@ -48,16 +48,18 @@ enum SessionStatus: Equatable {
     case missingAPIKey
     case error(String)
 
-    var displayText: String {
+    /// Plain language, lower case, no warning glyphs — the status dot already
+    /// carries the severity, so the words can just say what is happening.
+    var friendlyText: String {
         switch self {
-        case .idle: return "● Ready"
-        case .requestingPermission: return "● Requesting permission…"
-        case .connecting: return "● Starting…"
-        case .listening: return "● Listening"
-        case .reconnecting: return "● Reconnecting…"
-        case .permissionRequired: return "⚠ Permission Required"
-        case .missingAPIKey: return "⚠ API Key Needed"
-        case .error: return "⚠ Error"
+        case .idle: return "Ready when you are"
+        case .requestingPermission: return "Asking for permission…"
+        case .connecting: return "Warming up…"
+        case .listening: return "Listening"
+        case .reconnecting: return "Reconnecting…"
+        case .permissionRequired: return "Needs permission to hear your Mac"
+        case .missingAPIKey: return "Needs an API key"
+        case .error: return "Something went wrong"
         }
     }
 

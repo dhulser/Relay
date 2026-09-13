@@ -24,7 +24,7 @@ final class WhisperTranscriptionService: SpeechTranscribing {
 
     private var context: OpaquePointer?
     private let converter = AudioConverter(target: WhisperTranscriptionService.whisperFormat)
-    private let inference = DispatchQueue(label: "co.kevel.LiveTranslator.whisper", qos: .userInitiated)
+    private let inference = DispatchQueue(label: "co.kevel.Relay.whisper", qos: .userInitiated)
 
     /// Whisper is trained on 16 kHz mono float audio and accepts nothing else.
     static let whisperFormat: AVAudioFormat = {

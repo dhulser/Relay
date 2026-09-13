@@ -4,7 +4,7 @@ import os
 /// Console logging with stable `[Category] message` prefixes.
 ///
 /// Everything goes to both stdout (visible when run from Xcode) and the unified
-/// log (visible via `log stream --predicate 'subsystem == "co.kevel.LiveTranslator"'`,
+/// log (visible via `log stream --predicate 'subsystem == "co.kevel.Relay"'`,
 /// which is how you watch a menu-bar app launched with `open`).
 ///
 /// Never log the API key. Never log base64 audio payloads.
@@ -23,7 +23,7 @@ enum LogCategory: String {
 }
 
 enum Log {
-    private static let subsystem = "co.kevel.LiveTranslator"
+    private static let subsystem = "co.kevel.Relay"
     private static var loggers: [String: os.Logger] = [:]
     private static let lock = NSLock()
 

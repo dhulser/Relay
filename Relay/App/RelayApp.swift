@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct LiveTranslatorApp: App {
+struct RelayApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
@@ -9,7 +9,7 @@ struct LiveTranslatorApp: App {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
-            Text("🎙 Translate")
+            Text("🎙 Relay")
         }
         .menuBarExtraStyle(.window)
 

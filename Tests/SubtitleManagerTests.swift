@@ -1,6 +1,6 @@
 import XCTest
 import Combine
-@testable import LiveTranslator
+@testable import Relay
 
 @MainActor
 final class SubtitleManagerTests: XCTestCase {

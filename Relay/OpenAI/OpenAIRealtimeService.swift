@@ -45,7 +45,7 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     private var pendingChunk = Data()
     private var chunksSent = 0
 
-    private let queue = DispatchQueue(label: "co.kevel.LiveTranslator.realtime")
+    private let queue = DispatchQueue(label: "co.kevel.Relay.realtime")
 
     private var state: EngineState = .idle {
         didSet {

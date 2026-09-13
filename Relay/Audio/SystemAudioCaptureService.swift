@@ -46,7 +46,7 @@ final class SystemAudioCaptureService: NSObject, SCStreamOutput, SCStreamDelegat
     var onError: ((Error) -> Void)?
 
     private var stream: SCStream?
-    private let sampleQueue = DispatchQueue(label: "co.kevel.LiveTranslator.audio", qos: .userInitiated)
+    private let sampleQueue = DispatchQueue(label: "co.kevel.Relay.audio", qos: .userInitiated)
 
     // Diagnostics
     private var loggedInputFormat = false

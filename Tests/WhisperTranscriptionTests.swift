@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import LiveTranslator
+@testable import Relay
 
 /// End-to-end check of the local speech path: audio arrives shaped exactly the
 /// way ScreenCaptureKit delivers it, and Spanish text with a detected language
