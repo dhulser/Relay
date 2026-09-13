@@ -7,7 +7,9 @@ import os
 /// log (visible via `log stream --predicate 'subsystem == "co.kevel.Relay"'`,
 /// which is how you watch a menu-bar app launched with `open`).
 ///
-/// Never log the API key. Never log base64 audio payloads.
+/// Never log the API key. Never log base64 audio payloads. Anything someone
+/// said or its translation goes through `content`, never `info`: `info` is
+/// persisted to disk by logd, and Relay promises to keep no transcripts.
 enum LogCategory: String {
     case app = "App"
     case audio = "Audio"
@@ -45,5 +47,15 @@ enum Log {
     static func error(_ category: LogCategory, _ message: String) {
         print("[\(category.rawValue)] ERROR: \(message)")
         logger(for: category).error("\(message, privacy: .public)")
+    }
+
+    /// Spoken or translated text. `.debug` is never written to disk by logd,
+    /// and `.private` redacts it in Console unless private data is switched on
+    /// for debugging. Printed to stdout in Debug builds only.
+    static func content(_ category: LogCategory, _ message: String) {
+        #if DEBUG
+        print("[\(category.rawValue)] \(message)")
+        #endif
+        logger(for: category).debug("\(message, privacy: .private)")
     }
 }

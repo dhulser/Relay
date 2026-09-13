@@ -117,7 +117,7 @@ final class SubtitleManager: ObservableObject {
         if history.count > Self.maxHistory {
             history.removeFirst(history.count - Self.maxHistory)
         }
-        Log.info(.subtitles, "line: \(trimmed)")
+        Log.content(.subtitles, trimmed)
         resetIdleTimer()
     }
 

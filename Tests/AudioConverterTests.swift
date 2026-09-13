@@ -23,10 +23,10 @@ final class AudioConverterTests: XCTestCase {
         XCTAssertEqual(asbd.mFormatFlags & kAudioFormatFlagIsBigEndian, 0, "must be little endian")
     }
 
-    /// Feed exactly what ScreenCaptureKit delivers on this Mac — 48 kHz stereo
+    /// Feed exactly what the system-audio tap delivers on this Mac — 48 kHz stereo
     /// Float32 non-interleaved, in 20 ms buffers — and check the output really
     /// is one second of 24 kHz mono PCM16.
-    func testConvertsScreenCaptureKitFormatToOneSecondOf24kMono() {
+    func testConvertsSystemAudioFormatToOneSecondOf24kMono() {
         let input = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000,
                                   channels: 2, interleaved: false)!
         let converter = AudioConverter(target: AudioConverter.openAIRealtimeFormat)

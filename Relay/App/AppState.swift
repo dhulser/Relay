@@ -1,9 +1,46 @@
 import Foundation
 import Combine
 
-/// Languages offered in the source/target pickers.
+/// Languages offered in the source/target pickers, alphabetical by name.
+///
+/// Every one of these is in Whisper's set and accepted by the Realtime
+/// translations endpoint. Apple's recogniser supports fewer; it checks at
+/// start and says which it can do.
 enum Language: String, CaseIterable, Identifiable, Codable {
-    case spanish, english, french, german, italian, portuguese, japanese, korean, chinese
+    case arabic
+    case bengali
+    case catalan
+    case chinese
+    case czech
+    case danish
+    case dutch
+    case english
+    case filipino
+    case finnish
+    case french
+    case german
+    case greek
+    case hebrew
+    case hindi
+    case hungarian
+    case indonesian
+    case italian
+    case japanese
+    case korean
+    case malay
+    case norwegian
+    case persian
+    case polish
+    case portuguese
+    case romanian
+    case russian
+    case spanish
+    case swedish
+    case tamil
+    case thai
+    case turkish
+    case ukrainian
+    case vietnamese
 
     var id: String { rawValue }
 
@@ -11,41 +48,91 @@ enum Language: String, CaseIterable, Identifiable, Codable {
     /// for on-device speech recognition.
     var isoCode: String {
         switch self {
-        case .spanish: return "es"
+        case .arabic: return "ar"
+        case .bengali: return "bn"
+        case .catalan: return "ca"
+        case .chinese: return "zh"
+        case .czech: return "cs"
+        case .danish: return "da"
+        case .dutch: return "nl"
         case .english: return "en"
+        case .filipino: return "tl"
+        case .finnish: return "fi"
         case .french: return "fr"
         case .german: return "de"
+        case .greek: return "el"
+        case .hebrew: return "he"
+        case .hindi: return "hi"
+        case .hungarian: return "hu"
+        case .indonesian: return "id"
         case .italian: return "it"
-        case .portuguese: return "pt"
         case .japanese: return "ja"
         case .korean: return "ko"
-        case .chinese: return "zh"
+        case .malay: return "ms"
+        case .norwegian: return "no"
+        case .persian: return "fa"
+        case .polish: return "pl"
+        case .portuguese: return "pt"
+        case .romanian: return "ro"
+        case .russian: return "ru"
+        case .spanish: return "es"
+        case .swedish: return "sv"
+        case .tamil: return "ta"
+        case .thai: return "th"
+        case .turkish: return "tr"
+        case .ukrainian: return "uk"
+        case .vietnamese: return "vi"
         }
     }
 
     var displayName: String {
         switch self {
-        case .spanish: return "Spanish"
+        case .arabic: return "Arabic"
+        case .bengali: return "Bengali"
+        case .catalan: return "Catalan"
+        case .chinese: return "Chinese"
+        case .czech: return "Czech"
+        case .danish: return "Danish"
+        case .dutch: return "Dutch"
         case .english: return "English"
+        case .filipino: return "Filipino"
+        case .finnish: return "Finnish"
         case .french: return "French"
         case .german: return "German"
+        case .greek: return "Greek"
+        case .hebrew: return "Hebrew"
+        case .hindi: return "Hindi"
+        case .hungarian: return "Hungarian"
+        case .indonesian: return "Indonesian"
         case .italian: return "Italian"
-        case .portuguese: return "Portuguese"
         case .japanese: return "Japanese"
         case .korean: return "Korean"
-        case .chinese: return "Chinese"
+        case .malay: return "Malay"
+        case .norwegian: return "Norwegian"
+        case .persian: return "Persian"
+        case .polish: return "Polish"
+        case .portuguese: return "Portuguese"
+        case .romanian: return "Romanian"
+        case .russian: return "Russian"
+        case .spanish: return "Spanish"
+        case .swedish: return "Swedish"
+        case .tamil: return "Tamil"
+        case .thai: return "Thai"
+        case .turkish: return "Turkish"
+        case .ukrainian: return "Ukrainian"
+        case .vietnamese: return "Vietnamese"
         }
     }
 }
 
 enum SessionStatus: Equatable {
     case idle
-    case requestingPermission
     case connecting
     case listening
     case reconnecting
     case permissionRequired
     case missingAPIKey
+    case missingSpeechModel
     case error(String)
 
     /// Plain language, lower case, no warning glyphs — the status dot already
@@ -53,20 +140,20 @@ enum SessionStatus: Equatable {
     var friendlyText: String {
         switch self {
         case .idle: return "Ready when you are"
-        case .requestingPermission: return "Asking for permission…"
         case .connecting: return "Warming up…"
         case .listening: return "Listening"
         case .reconnecting: return "Reconnecting…"
         case .permissionRequired: return "Needs permission to hear your Mac"
         case .missingAPIKey: return "Needs an API key"
+        case .missingSpeechModel: return "Needs the speech model"
         case .error: return "Something went wrong"
         }
     }
 
     var isRunning: Bool {
         switch self {
-        case .idle, .permissionRequired, .missingAPIKey, .error: return false
-        case .requestingPermission, .connecting, .listening, .reconnecting: return true
+        case .idle, .permissionRequired, .missingAPIKey, .missingSpeechModel, .error: return false
+        case .connecting, .listening, .reconnecting: return true
         }
     }
 }
@@ -79,9 +166,6 @@ final class AppState: ObservableObject {
     /// 0…1 peak level of the captured system audio, for the popover meter.
     @Published var audioLevel: Float = 0
 
-    /// Set when Screen Recording was just granted and macOS needs a relaunch.
-    @Published var needsRelaunch = false
-
     /// Whether the *selected* provider has a key stored.
     @Published var hasAPIKey = false
 
@@ -89,7 +173,7 @@ final class AppState: ObservableObject {
         didSet {
             defaults.set(provider.rawValue, forKey: Self.providerKey)
             reconcileSourceLanguage()
-            refreshAPIKeyState()
+            refreshReadiness()
         }
     }
     @Published var claudeModel: ClaudeModel {
@@ -102,10 +186,14 @@ final class AppState: ObservableObject {
         didSet {
             defaults.set(speechEngine.rawValue, forKey: Self.speechEngineKey)
             reconcileSourceLanguage()
+            refreshReadiness()
         }
     }
     @Published var whisperModel: WhisperModel {
-        didSet { defaults.set(whisperModel.rawValue, forKey: Self.whisperModelKey) }
+        didSet {
+            defaults.set(whisperModel.rawValue, forKey: Self.whisperModelKey)
+            refreshReadiness()
+        }
     }
 
     /// Voiceprint speaker labelling. Only possible on the local pipelines,
@@ -207,6 +295,7 @@ final class AppState: ObservableObject {
     let stats = TranslationStats()
 
     private lazy var subtitlePanel = SubtitlePanelController()
+    private var cancellables: Set<AnyCancellable> = []
 
     init() {
         let defaults = UserDefaults.standard
@@ -237,8 +326,16 @@ final class AppState: ObservableObject {
             for lane in self.lanes { lane.realtime?.receive(buffer) }
         }
 
+        // A model finishing its download should turn "Needs the speech model"
+        // into "Ready" without anyone reopening Settings.
+        ModelStore.whisper.$installed
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshReadiness() }
+            .store(in: &cancellables)
+
         reconcileSourceLanguage()
-        refreshAPIKeyState()
+        refreshReadiness()
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
             + "\(WhisperRuntime.languageCount) languages; "
             + "sherpa-onnx \(SpeakerRuntime.version)")
@@ -271,8 +368,6 @@ final class AppState: ObservableObject {
         Log.info(.app, "Start requested — \(providers.map(\.shortLabel).joined(separator: " vs ")), "
             + "\(sourceLanguage.displayName) → \(targetLanguage.displayName)")
         errorDetail = nil
-        needsRelaunch = false
-
 
         // Every engine needs its key before anything starts, so a missing one
         // fails immediately rather than half-way through a comparison.
@@ -370,8 +465,12 @@ final class AppState: ObservableObject {
             Task {
                 do {
                     try await transcriber.start(language: sourceLanguage.language)
+                    // Stop may have been pressed while the model loaded; only
+                    // the session that is still current gets to say so.
+                    guard self.sharedTranscriber === transcriber else { return }
                     self.status = .listening
                 } catch {
+                    guard self.sharedTranscriber === transcriber else { return }
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     self.fail(with: message, kind: error)
                 }
@@ -412,7 +511,7 @@ final class AppState: ObservableObject {
                 // Only the first lane counts, otherwise a comparison would
                 // tally the same speech once per engine.
                 if laneIndex == 0 { self.stats.record(line: text, language: waiting.language) }
-                if comparing { Log.info(.compare, "[\(label)] \(text)") }
+                if comparing { Log.content(.compare, "[\(label)] \(text)") }
             }
         }
         translator.onFatalError = { [weak self] message in
@@ -438,7 +537,7 @@ final class AppState: ObservableObject {
                 stream.manager.complete(text)
                 // Realtime only counts when it is the engine, not the rival.
                 if let self, self.lanes.first?.realtime != nil { self.stats.record(line: text) }
-                if comparing { Log.info(.compare, "[\(label)] \(text)") }
+                if comparing { Log.content(.compare, "[\(label)] \(text)") }
             }
         }
         realtime.onFatalError = { [weak self] message in
@@ -528,17 +627,32 @@ final class AppState: ObservableObject {
 
     // MARK: - Settings plumbing
 
-    func refreshAPIKeyState() {
+    /// Whether the selected recogniser has what it needs on disk. Only Whisper
+    /// has a model to download; Apple's arrives on its own at first start.
+    var hasSpeechModel: Bool {
+        !provider.usesLocalSpeech || speechEngine != .whisper || ModelStore.whisper.isInstalled(whisperModel)
+    }
+
+    /// Says up front what Start would otherwise only complain about: a missing
+    /// key, or a speech model nobody has downloaded yet. Only the resting
+    /// states are rewritten; a running session keeps its own status.
+    func refreshReadiness() {
         hasAPIKey = KeychainService.hasAPIKey(for: provider)
 
-        // Surface a missing key immediately rather than showing "Ready" and
-        // only admitting otherwise once Start is pressed.
-        if hasAPIKey, status == .missingAPIKey {
-            status = .idle
-            errorDetail = nil
-        } else if !hasAPIKey, status == .idle {
-            status = .missingAPIKey
-            errorDetail = "Add your API key in Settings to start translating."
+        switch status {
+        case .idle, .missingAPIKey, .missingSpeechModel:
+            if !hasAPIKey {
+                status = .missingAPIKey
+                errorDetail = "Add your API key in Settings to start translating."
+            } else if !hasSpeechModel {
+                status = .missingSpeechModel
+                errorDetail = "Download the \(whisperModel.displayName) speech model in Settings, then press start."
+            } else {
+                status = .idle
+                errorDetail = nil
+            }
+        default:
+            break
         }
     }
 
@@ -586,10 +700,9 @@ final class AppState: ObservableObject {
             status = .permissionRequired
             errorDetail = "Relay needs permission to hear your Mac's audio. "
                 + "Allow it in System Settings, then press start again."
-            needsRelaunch = false
         } else {
             status = .error(message)
+            errorDetail = message
         }
-        errorDetail = message
     }
 }

@@ -3,7 +3,7 @@ import AVFoundation
 @testable import Relay
 
 /// End-to-end check of the local speech path: audio arrives shaped exactly the
-/// way ScreenCaptureKit delivers it, and Spanish text with a detected language
+/// way the system-audio tap delivers it, and Spanish text with a detected language
 /// comes out the other side.
 ///
 /// This covers the parts of the pipeline that need no API key — capture format
@@ -11,7 +11,7 @@ import AVFoundation
 /// language identification.
 final class WhisperTranscriptionTests: XCTestCase {
 
-    /// What ScreenCaptureKit hands us on this Mac.
+    /// What the system-audio tap hands us on this Mac.
     private static let captureFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false
     )!

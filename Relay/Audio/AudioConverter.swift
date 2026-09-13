@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// Converts whatever ScreenCaptureKit hands us into a target format.
+/// Converts whatever the audio capture hands us into a target format.
 ///
 /// Each engine needs something different — OpenAI's Realtime API wants 24 kHz
 /// mono PCM16, while Apple's `SpeechAnalyzer` publishes its own preferred

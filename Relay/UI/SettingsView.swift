@@ -13,7 +13,7 @@ struct SettingsView: View {
             Form {
                 translationSection
                 languagesSection
-            tallySection
+                tallySection
                 if appState.provider.usesLocalSpeech { SpeechEngineSection() }
             }
             .formStyle(.grouped)
@@ -26,7 +26,7 @@ struct SettingsView: View {
         // made the window taller than the screen and pushed it under the menu
         // bar. The grouped form scrolls internally when it overflows.
         .frame(width: 520, height: 560)
-        .onAppear { appState.refreshAPIKeyState() }
+        .onAppear { appState.refreshReadiness() }
         .onChange(of: appState.provider) { _, _ in
             // The field holds a key for the provider that was selected a moment
             // ago — clear it rather than risk saving it under the new one.
@@ -188,9 +188,9 @@ struct SettingsView: View {
     // MARK: - Actions
 
     private var keyHint: String {
-        appState.provider.usesLocalSpeech
+        appState.provider == .claude
             ? "Kept in your Keychain"
-            : "Shared with the OpenAI provider"
+            : "Kept in your Keychain, shared by both OpenAI engines"
     }
 
     private func save() {
@@ -199,13 +199,13 @@ struct SettingsView: View {
         // Never keep the key in view state longer than needed.
         apiKeyField = ""
         isEnteringKey = false
-        appState.refreshAPIKeyState()
+        appState.refreshReadiness()
     }
 
     private func remove() {
         KeychainService.deleteAPIKey(for: appState.provider)
         apiKeyField = ""
         isEnteringKey = false
-        appState.refreshAPIKeyState()
+        appState.refreshReadiness()
     }
 }

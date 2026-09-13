@@ -15,8 +15,9 @@ final class OpenAITextTranslator: TextTranslating {
     private let systemPrompt: String
     private let session: URLSession
 
-    /// Utterances translate one at a time so subtitles can't arrive out of order.
-    private var pending: Task<Void, Never>?
+    /// Utterances translate one at a time so subtitles can't arrive out of
+    /// order. Every task still running is kept so `cancel()` stops all of them.
+    private var inFlight: [Task<Void, Never>] = []
 
     init(apiKey: String, model: OpenAITextModel, source: SourceLanguageSetting, target: Language) {
         self.apiKey = apiKey
@@ -32,17 +33,18 @@ final class OpenAITextTranslator: TextTranslating {
         let text = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        let previous = pending
-        pending = Task { [weak self] in
+        let previous = inFlight.last
+        inFlight.append(Task { [weak self] in
             _ = await previous?.result
             guard let self, !Task.isCancelled else { return }
             await self.stream(text)
-        }
+        })
+        if inFlight.count > 8 { inFlight.removeFirst(inFlight.count - 8) }
     }
 
     func cancel() {
-        pending?.cancel()
-        pending = nil
+        inFlight.forEach { $0.cancel() }
+        inFlight.removeAll()
     }
 
     private func stream(_ text: String) async {
@@ -87,7 +89,8 @@ final class OpenAITextTranslator: TextTranslating {
 
             let final = translation.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !final.isEmpty else { return }
-            Log.info(.translation, final)
+            guard !Task.isCancelled else { return }
+            Log.content(.translation, final)
             await MainActor.run { self.onFinal?(final) }
 
         } catch {

@@ -33,19 +33,21 @@ targets:
         CFBundleIconFile: Relay
         NSAudioCaptureUsageDescription: Relay reads the audio your Mac is playing so it can put translated subtitles on screen. It never listens to your microphone.
         CFBundleName: Relay
-        CFBundleDisplayName: Live Translator
+        CFBundleDisplayName: Relay
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Menu-bar-only app: no Dock icon, no main window.
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
-        NSHumanReadableCopyright: ""
+        NSHumanReadableCopyright: "© 2026 Dylan Hulser"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.kevel.Relay
         PRODUCT_NAME: Relay
-        MARKETING_VERSION: "0.1"
+        MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         # Manual signing with the existing "Apple Development" identity. A stable
-        # signature keeps the Screen Recording TCC grant across rebuilds, which
+        # signature keeps the system-audio permission across rebuilds, which
         # ad-hoc signing would not.
         DEVELOPMENT_TEAM: 4PJ4624484
         CODE_SIGN_STYLE: Manual

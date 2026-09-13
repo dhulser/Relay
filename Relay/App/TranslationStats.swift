@@ -65,7 +65,7 @@ final class TranslationStats: ObservableObject {
 
     /// One finished line of translation, and the language it came from.
     func record(line: String, language code: String? = nil) {
-        let count = line.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+        let count = Self.wordCount(in: line)
         guard count > 0 else { return }
 
         words += count
@@ -146,6 +146,31 @@ final class TranslationStats: ObservableObject {
         defaults.removeObject(forKey: Self.wordsKey)
         defaults.removeObject(forKey: Self.languagesKey)
         defaults.removeObject(forKey: Self.secondsKey)
+    }
+
+    /// Words in a line. Whitespace-separated for most scripts. Chinese and
+    /// Japanese put no spaces between words, so there each Han, hiragana or
+    /// katakana character counts as one; a rough measure, but far closer than
+    /// calling a whole sentence a single word.
+    static func wordCount(in line: String) -> Int {
+        var count = 0
+        for token in line.split(whereSeparator: { $0.isWhitespace || $0.isNewline }) {
+            let ideographs = token.unicodeScalars.filter(Self.isUnspacedScript).count
+            count += ideographs > 0 ? ideographs : 1
+        }
+        return count
+    }
+
+    private static func isUnspacedScript(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3040...0x30FF,   // hiragana, katakana
+             0x3400...0x4DBF,   // CJK extension A
+             0x4E00...0x9FFF,   // CJK unified ideographs
+             0xF900...0xFAFF:   // CJK compatibility ideographs
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Display

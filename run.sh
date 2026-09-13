@@ -13,7 +13,7 @@ xcodebuild -project Relay.xcodeproj -scheme Relay \
 pkill -x Relay 2>/dev/null || true
 sleep 0.5
 open "$APP"
-echo "Launched $APP — look for '🎙 Translate' in the menu bar."
+echo "Launched $APP — look for 'Relay' in the menu bar."
 echo "Streaming logs (Ctrl-C to stop):"
 exec log stream --style compact --level info \
   --predicate 'subsystem == "co.kevel.Relay"'

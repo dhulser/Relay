@@ -60,12 +60,12 @@ final class SystemAudioCaptureService {
     private var loggedFormat = false
     private var buffersSeen = 0
     private var levelPeak: Float = 0
-    private var levelSamples = 0
-    private var lastLevelLog = Date.distantPast
+    private var lastLevelReport = Date.distantPast
 
     static func openAudioSettings() {
-        // Sequoia lists system audio capture under Privacy & Security.
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+        // System audio capture lives under "Screen & System Audio Recording",
+        // not Microphone. Privacy_AudioCapture is the anchor for that pane.
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!
         NSWorkspace.shared.open(url)
     }
 
@@ -79,8 +79,7 @@ final class SystemAudioCaptureService {
         loggedFormat = false
         buffersSeen = 0
         levelPeak = 0
-        levelSamples = 0
-        lastLevelLog = .distantPast
+        lastLevelReport = .distantPast
         Log.info(.audio, "Capture started")
     }
 
@@ -245,23 +244,14 @@ final class SystemAudioCaptureService {
         let rms = (sum / Float(max(frames * channelCount, 1))).squareRoot()
 
         levelPeak = max(levelPeak, rms)
-        levelSamples += 1
 
+        // The meter only needs a couple of updates a second.
         let now = Date()
-        guard now.timeIntervalSince(lastLevelLog) >= 0.5 else { return }
-        lastLevelLog = now
+        guard now.timeIntervalSince(lastLevelReport) >= 0.5 else { return }
+        lastLevelReport = now
 
         let peak = levelPeak
-        Log.info(.audio, "level \(Self.meter(for: peak)) peak=\(String(format: "%.4f", peak)) "
-            + "buffers=\(levelSamples)")
         levelPeak = 0
-        levelSamples = 0
         DispatchQueue.main.async { [weak self] in self?.onLevel?(peak) }
-    }
-
-    private static func meter(for rms: Float) -> String {
-        let db = 20 * log10(max(rms, 0.000_001))
-        let filled = min(max(Int(((db + 60) / 60 * 20).rounded()), 0), 20)
-        return String(repeating: "█", count: filled) + String(repeating: "·", count: 20 - filled)
     }
 }

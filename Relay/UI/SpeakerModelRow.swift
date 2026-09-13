@@ -19,7 +19,7 @@ struct SpeakerModelRow: View {
             HStack {
                 Label("Speaker model downloaded", systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(RelayTheme.listening)
                 Spacer()
                 Button("Remove") { store.delete(model) }
                     .font(.caption)
@@ -38,7 +38,7 @@ struct SpeakerModelRow: View {
         if let error = store.lastError {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(RelayTheme.working)
         }
     }
 }

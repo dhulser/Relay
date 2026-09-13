@@ -26,8 +26,9 @@ final class ClaudeTranslator: TextTranslating {
     private let session: URLSession
 
     /// Utterances are translated one at a time so subtitles can't arrive out of
-    /// order when two land close together.
-    private var pending: Task<Void, Never>?
+    /// order when two land close together. Every task still running is kept,
+    /// so `cancel()` can stop all of them rather than only the newest.
+    private var inFlight: [Task<Void, Never>] = []
 
     init(apiKey: String, model: ClaudeModel, source: SourceLanguageSetting, target: Language) {
         self.apiKey = apiKey
@@ -43,17 +44,19 @@ final class ClaudeTranslator: TextTranslating {
         let text = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        let previous = pending
-        pending = Task { [weak self] in
+        let previous = inFlight.last
+        inFlight.append(Task { [weak self] in
             _ = await previous?.result
             guard let self, !Task.isCancelled else { return }
             await self.stream(text)
-        }
+        })
+        // Tasks complete in order, so only the tail can still be running.
+        if inFlight.count > 8 { inFlight.removeFirst(inFlight.count - 8) }
     }
 
     func cancel() {
-        pending?.cancel()
-        pending = nil
+        inFlight.forEach { $0.cancel() }
+        inFlight.removeAll()
     }
 
     // MARK: - Streaming request
@@ -114,7 +117,8 @@ final class ClaudeTranslator: TextTranslating {
 
             let final = translation.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !final.isEmpty else { return }
-            Log.info(.translation, final)
+            guard !Task.isCancelled else { return }
+            Log.content(.translation, final)
             await MainActor.run { self.onFinal?(final) }
 
         } catch {

@@ -95,6 +95,10 @@ final class SubtitlePanelController {
             panel?.orderOut(nil)
             panel = nil
             cancellables.removeAll()
+            if let moveObserver {
+                NotificationCenter.default.removeObserver(moveObserver)
+                self.moveObserver = nil
+            }
         }
         self.streams = streams
         self.labelled = labelled

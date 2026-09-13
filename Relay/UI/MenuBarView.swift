@@ -120,6 +120,14 @@ struct MenuBarView: View {
                 .foregroundStyle(RelayTheme.accent)
                 .padding(.top, 6)
         }
+
+        if appState.status == .missingSpeechModel {
+            Button("Download the speech model") { showSettings() }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(RelayTheme.accent)
+                .padding(.top, 6)
+        }
     }
 
     /// What Relay has done for you so far. Appears once there is something
@@ -193,9 +201,9 @@ struct MenuBarView: View {
     private var statusColour: Color {
         switch appState.status {
         case .idle: return RelayTheme.resting
-        case .requestingPermission, .connecting, .reconnecting: return RelayTheme.working
+        case .connecting, .reconnecting: return RelayTheme.working
         case .listening: return RelayTheme.listening
-        case .permissionRequired, .missingAPIKey, .error: return RelayTheme.attention
+        case .permissionRequired, .missingAPIKey, .missingSpeechModel, .error: return RelayTheme.attention
         }
     }
 

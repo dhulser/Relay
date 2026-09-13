@@ -209,7 +209,8 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
 
         guard let event = try? JSONDecoder().decode(RealtimeServerEvent.self, from: rawJSON) else {
             let head = String(String(data: rawJSON, encoding: .utf8)?.prefix(240) ?? "<binary>")
-            Log.error(.realtime, "could not decode inbound frame: \(head)")
+            Log.error(.realtime, "could not decode an inbound frame")
+            Log.content(.realtime, head)
             return
         }
 

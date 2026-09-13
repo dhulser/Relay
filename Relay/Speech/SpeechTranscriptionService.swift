@@ -113,7 +113,7 @@ final class SpeechTranscriptionService: SpeechTranscribing {
                     guard !text.isEmpty else { continue }
 
                     if result.isFinal {
-                        Log.info(.speech, "final: \(text)")
+                        Log.content(.speech, text)
                         let output = TranscriptionResult(text: text, languageCode: language.isoCode)
                         await MainActor.run { self.onFinalText?(output) }
                     } else {
