@@ -67,6 +67,12 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// are still matched against speakers already known.
     private static let minimumSpeakerAudio = 1.2
 
+    /// Phrases waiting on inference. Transcription runs ~9x faster than
+    /// realtime, so a short backlog drains quickly and dropping outright — as
+    /// this used to — simply lost captions the user was owed.
+    private var queued: [[Float]] = []
+    private static let maximumQueued = 2
+
     private var phrase: [Float] = []
     private var silenceRun = 0
     private var speaking = false
@@ -109,6 +115,7 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         context = loaded
 
         phrase.removeAll(keepingCapacity: true)
+        queued.removeAll()
         silenceRun = 0
         speaking = false
         loggedFirstAudio = false
@@ -185,17 +192,29 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     // MARK: - Inference
 
     private func transcribe(_ samples: [Float]) {
-        // Drop a phrase rather than queue it if inference is still busy —
-        // backed-up subtitles are worse than a missing one.
+        // Queue rather than drop. Only when the backlog would grow unbounded —
+        // which means inference is losing to realtime — is the oldest phrase
+        // discarded, since stale subtitles help nobody.
         guard !busy else {
-            Log.info(.whisper, "Skipped a phrase (still transcribing the previous one)")
+            queued.append(samples)
+            if queued.count > Self.maximumQueued {
+                queued.removeFirst()
+                Log.info(.whisper, "Dropped the oldest queued phrase — inference is behind")
+            }
             return
         }
         busy = true
 
         inference.async { [weak self] in
             guard let self, let context = self.context else { return }
-            defer { self.busy = false }
+            defer {
+                self.busy = false
+                // Drain anything that arrived while this one was running.
+                if !self.queued.isEmpty {
+                    let next = self.queued.removeFirst()
+                    self.transcribe(next)
+                }
+            }
 
             var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
             params.print_realtime = false

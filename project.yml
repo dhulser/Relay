@@ -47,9 +47,7 @@ targets:
         # ad-hoc signing would not.
         DEVELOPMENT_TEAM: 4PJ4624484
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "Apple Development"
         PROVISIONING_PROFILE_SPECIFIER: ""
-        OTHER_CODE_SIGN_FLAGS: "--timestamp=none"
         # Swift 5 language mode: async/await works, but we skip Swift 6's
         # strict data-race checking, which would be pure friction for an MVP.
         SWIFT_VERSION: "5.0"
@@ -57,7 +55,7 @@ targets:
         # built for Metal and the Neural Engine. An x86_64 slice could not link
         # and would lose the acceleration that makes local transcription viable.
         ARCHS: arm64
-        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         # Vendored whisper.cpp — see scripts/build-whisper.sh to rebuild.
         SWIFT_OBJC_BRIDGING_HEADER: LiveTranslator/Whisper/WhisperBridge.h
@@ -65,6 +63,16 @@ targets:
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/whisper/lib
         OTHER_LDFLAGS: -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lc++
         FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/Vendor/sherpa
+      configs:
+        # Debug iterates with the development cert — no timestamp server, no
+        # notarization, fast rebuilds.
+        Debug:
+          CODE_SIGN_IDENTITY: "Apple Development"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp=none"
+        # Release is what ships: Developer ID plus a secure timestamp, which
+        # notarization requires.
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
 
   LiveTranslatorTests:
     type: bundle.unit-test

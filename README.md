@@ -74,6 +74,27 @@ so captions don't flicker as tokens arrive.
 - The microphone is never used. No analytics, no telemetry.
 - API keys live in the macOS Keychain and are never logged.
 
+## Releasing
+
+```bash
+./scripts/release.sh
+```
+
+Builds Release, notarizes and staples the app, wraps it in a drag-to-install
+disk image, notarizes that too, and verifies the result the way Gatekeeper
+will. Output: `dist/LiveTranslator.dmg`.
+
+Needs a **Developer ID Application** certificate and a notarytool credential:
+
+```bash
+xcrun notarytool store-credentials "notary" \
+  --apple-id "you@example.com" --team-id 4PJ4624484 \
+  --password "app-specific-password-from-appleid.apple.com"
+```
+
+Release builds use Developer ID with the hardened runtime; Debug keeps the
+development certificate for fast local iteration.
+
 ## Building
 
 Requires Xcode 26+ and [xcodegen](https://github.com/yonaskolb/XcodeGen).
