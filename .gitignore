@@ -14,3 +14,7 @@ dist/
 dist-site/
 build-strict/
 build-*/
+
+# Local editor config
+.claude/
+dist-site/
