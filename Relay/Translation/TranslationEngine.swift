@@ -58,47 +58,33 @@ enum TranslationProvider: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Rough running cost for an hour of typical speech, for the Settings copy.
+    /// Rough running cost for an hour of typical speech. Recalculated after the
+    /// system prompt was cut from ~280 tokens to ~124, which roughly halved the
+    /// input billed per utterance.
     var costPerHour: String {
         switch self {
-        case .claude: return "~$0.31/hour on Haiku 4.5"
-        case .openai: return "~$0.07/hour on Luna"
-        case .openaiRealtime: return "$2.04/hour"
+        case .claude: return "about $0.19 an hour"
+        case .openai: return "about $0.04 an hour"
+        case .openaiRealtime: return "$2.04 an hour"
         }
     }
 
-    var tradeOffs: [(symbol: String, text: String, isAdvantage: Bool)] {
+    /// Where the audio goes — the thing most worth knowing at a glance.
+    var privacyNote: String {
         switch self {
-        case .claude:
-            return [
-                ("checkmark.circle.fill",
-                 "About $0.31/hour on Haiku 4.5 — only text is billed, recognition is free.", true),
-                ("checkmark.circle.fill",
-                 "Audio never leaves your Mac. Only the recognised text is sent.", true),
-                ("info.circle.fill",
-                 "A line appears once a phrase finishes rather than mid-sentence.", false),
-            ]
-        case .openai:
-            return [
-                ("checkmark.circle.fill",
-                 "About $0.07/hour on Luna — the cheapest option by a wide margin.", true),
-                ("checkmark.circle.fill",
-                 "Audio never leaves your Mac. Only the recognised text is sent.", true),
-                ("info.circle.fill",
-                 "A line appears once a phrase finishes rather than mid-sentence.", false),
-            ]
-        case .openaiRealtime:
-            return [
-                ("checkmark.circle.fill",
-                 "Translates while the speaker is still talking, so lines appear soonest.", true),
-                ("xmark.circle.fill",
-                 "$2.04/hour ($0.034/minute), billed by audio duration whether anyone is "
-                 + "speaking or not.", false),
-                ("xmark.circle.fill",
-                 "Your system audio is streamed to OpenAI.", false),
-            ]
+        case .claude, .openai: return "audio stays on your Mac"
+        case .openaiRealtime: return "audio is sent to OpenAI"
         }
     }
+
+    /// The one trade worth surfacing next to the choice.
+    var characteristic: String {
+        switch self {
+        case .claude, .openai: return "Lines appear when a phrase finishes."
+        case .openaiRealtime: return "Lines appear while the speaker is still talking."
+        }
+    }
+
 }
 
 /// Which recogniser handles the local half of the pipeline.
@@ -231,8 +217,11 @@ enum EngineError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey(let provider):
-            return "Add your \(provider.credentialName) API key in Settings to start translating."
+        case .missingAPIKey:
+            // Deliberately not naming the provider: Settings already shows which
+            // one is selected, and naming it here reads as though the wrong key
+            // was entered rather than none.
+            return "Add your API key in Settings to start translating."
         case .unsupportedLanguage(let detail):
             return detail
         case .setupFailed(let detail):

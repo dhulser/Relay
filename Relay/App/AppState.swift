@@ -363,7 +363,7 @@ final class AppState: ObservableObject {
             errorDetail = nil
         } else if !hasAPIKey, status == .idle {
             status = .missingAPIKey
-            errorDetail = "Add your \(provider.credentialName) API key in Settings to start translating."
+            errorDetail = "Add your API key in Settings to start translating."
         }
     }
 

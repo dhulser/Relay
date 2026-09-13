@@ -10,122 +10,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Translation Provider") {
-                Picker("Provider", selection: $appState.provider) {
-                    ForEach(TranslationProvider.allCases) { Text($0.displayName).tag($0) }
-                }
-                .pickerStyle(.segmented)
-
-                Text(appState.provider.pipelineDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(appState.provider.tradeOffs.enumerated()), id: \.offset) { _, item in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: item.symbol)
-                                .foregroundStyle(item.isAdvantage ? .green : .secondary)
-                            Text(item.text)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .font(.caption)
-                .padding(.vertical, 2)
-
-                switch appState.provider {
-                case .claude:
-                    Picker("Model", selection: $appState.claudeModel) {
-                        ForEach(ClaudeModel.allCases) { model in
-                            Text("\(model.displayName) — \(model.subtitle)").tag(model)
-                        }
-                    }
-                case .openai:
-                    Picker("Model", selection: $appState.openAIModel) {
-                        ForEach(OpenAITextModel.allCases) { model in
-                            Text("\(model.displayName) — \(model.subtitle)").tag(model)
-                        }
-                    }
-                case .openaiRealtime:
-                    EmptyView()
-                }
-            }
-
-            if appState.provider.usesLocalSpeech {
-                SpeechEngineSection()
-            }
-
-            Section("\(appState.provider.credentialName) API Key") {
-                if appState.hasAPIKey && !isEnteringKey {
-                    LabeledContent("API Key") {
-                        Label("Stored in Keychain", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-
-                    HStack {
-                        Button("Replace…") {
-                            apiKeyField = ""
-                            isEnteringKey = true
-                        }
-                        Button("Remove", role: .destructive) { remove() }
-                        Spacer()
-                    }
-                } else {
-                    SecureField("API Key", text: $apiKeyField,
-                                prompt: Text(appState.provider.keyPlaceholder))
-                        .textContentType(.password)
-                        .onSubmit { save() }
-
-                    HStack {
-                        Button("Save") { save() }
-                            .keyboardShortcut(.defaultAction)
-                            .disabled(apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        if appState.hasAPIKey {
-                            Button("Cancel") {
-                                apiKeyField = ""
-                                isEnteringKey = false
-                            }
-                        }
-                        Spacer()
-                    }
-                }
-
-                Text(keyFootnote)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Languages") {
-                if appState.canAutoDetect {
-                    LabeledContent("Source Language") {
-                        Label("Detected automatically", systemImage: "wand.and.stars")
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Picker("Source Language", selection: $appState.sourceLanguage) {
-                        ForEach(Language.allCases) {
-                            Text($0.displayName).tag(SourceLanguageSetting.explicit($0))
-                        }
-                    }
-                    Text("Apple's recogniser handles one language at a time. Switch the speech "
-                         + "engine to Whisper to detect it automatically.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Picker("Target Language", selection: $appState.targetLanguage) {
-                    ForEach(Language.allCases) { Text($0.displayName).tag($0) }
-                }
-                Text("Language changes take effect the next time you start translation.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            translationSection
+            languagesSection
+            if appState.provider.usesLocalSpeech { SpeechEngineSection() }
         }
         .formStyle(.grouped)
         // A bounded height, not fixedSize: letting the form size to its content
         // made the window taller than the screen and pushed it under the menu
         // bar. The grouped form scrolls internally when it overflows.
-        .frame(width: 520, height: 560)
+        .frame(width: 500, height: 540)
         .onAppear { appState.refreshAPIKeyState() }
         .onChange(of: appState.provider) { _, _ in
             // The field holds a key for the provider that was selected a moment
@@ -135,12 +28,115 @@ struct SettingsView: View {
         }
     }
 
-    private var keyFootnote: String {
-        let shared = appState.provider.usesLocalSpeech
-            ? ""
-            : " The OpenAI and OpenAI Realtime providers share this key."
-        return "Stored in your macOS Keychain. Never written to disk or logged by this app."
-            + shared
+    // MARK: - Translation
+
+    private var translationSection: some View {
+        Section("Translation") {
+            Picker("", selection: $appState.provider) {
+                ForEach(TranslationProvider.allCases) { Text($0.displayName).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(appState.provider.pipelineDescription)
+                Text(appState.provider.characteristic)
+                HStack(spacing: 5) {
+                    Text(appState.provider.costPerHour)
+                    Text("·").foregroundStyle(.tertiary)
+                    Text(appState.provider.privacyNote)
+                }
+                .foregroundStyle(appState.provider.usesLocalSpeech ? RelayTheme.listening : .secondary)
+            }
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 2)
+
+            switch appState.provider {
+            case .claude:
+                Picker("Model", selection: $appState.claudeModel) {
+                    ForEach(ClaudeModel.allCases) { model in
+                        Text("\(model.displayName) — \(model.subtitle)").tag(model)
+                    }
+                }
+            case .openai:
+                Picker("Model", selection: $appState.openAIModel) {
+                    ForEach(OpenAITextModel.allCases) { model in
+                        Text("\(model.displayName) — \(model.subtitle)").tag(model)
+                    }
+                }
+            case .openaiRealtime:
+                EmptyView()
+            }
+
+            apiKeyRow
+        }
+    }
+
+    @ViewBuilder
+    private var apiKeyRow: some View {
+        if appState.hasAPIKey && !isEnteringKey {
+            LabeledContent("API key") {
+                HStack(spacing: 8) {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(RelayTheme.listening)
+                    Button("Replace") { apiKeyField = ""; isEnteringKey = true }
+                        .buttonStyle(.link)
+                    Button("Remove") { remove() }
+                        .buttonStyle(.link)
+                }
+                .font(.system(size: 11.5))
+            }
+        } else {
+            LabeledContent("API key") {
+                SecureField("", text: $apiKeyField, prompt: Text(appState.provider.keyPlaceholder))
+                    .textContentType(.password)
+                    .onSubmit { save() }
+            }
+            HStack {
+                Button("Save") { save() }
+                    .disabled(apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if appState.hasAPIKey {
+                    Button("Cancel") { apiKeyField = ""; isEnteringKey = false }
+                }
+                Spacer()
+                Text(keyHint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - Languages
+
+    private var languagesSection: some View {
+        Section("Languages") {
+            if !appState.canAutoDetect {
+                Picker("From", selection: $appState.sourceLanguage) {
+                    ForEach(Language.allCases) {
+                        Text($0.displayName).tag(SourceLanguageSetting.explicit($0))
+                    }
+                }
+            }
+
+            Picker("Translating to", selection: $appState.targetLanguage) {
+                ForEach(Language.allCases) { Text($0.displayName).tag($0) }
+            }
+
+            Text(appState.canAutoDetect
+                 ? "The spoken language is detected automatically, and can change mid-session."
+                 : "Apple's recogniser handles one language at a time. Switch to Whisper below to detect it automatically.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Actions
+
+    private var keyHint: String {
+        appState.provider.usesLocalSpeech
+            ? "Kept in your Keychain"
+            : "Shared with the OpenAI provider"
     }
 
     private func save() {

@@ -34,13 +34,12 @@ struct MenuBarView: View {
     }
 
     private var languages: some View {
-        VStack(spacing: 10) {
-            RelayRow(label: "Hearing") {
-                if appState.canAutoDetect {
-                    Text("whatever's playing")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                } else {
+        VStack(alignment: .leading, spacing: 10) {
+            // The source row appears only when it actually needs setting. When
+            // the engine detects the language there is nothing to choose, and a
+            // row saying so is just noise.
+            if !appState.canAutoDetect {
+                RelayRow(label: "From") {
                     Picker("", selection: $appState.sourceLanguage) {
                         ForEach(Language.allCases) {
                             Text($0.displayName).tag(SourceLanguageSetting.explicit($0))
@@ -51,12 +50,18 @@ struct MenuBarView: View {
                 }
             }
 
-            RelayRow(label: "Showing me") {
+            RelayRow(label: "Translating to") {
                 Picker("", selection: $appState.targetLanguage) {
                     ForEach(Language.allCases) { Text($0.displayName).tag($0) }
                 }
                 .labelsHidden()
                 .fixedSize()
+            }
+
+            if appState.canAutoDetect {
+                Text("Detects the spoken language automatically.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
             }
         }
     }
