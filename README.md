@@ -1,144 +1,117 @@
 # Relay
 
-A menu-bar app that puts live translated subtitles on screen for whatever audio
-is playing on your Mac. Point it at a Spanish YouTube video and read English
-captions while the original audio keeps playing normally.
+Live subtitles, in your language, for calls and anything else playing on your
+Mac. Relay listens to what your Mac is playing, recognises the speech, and puts
+the translation on screen while the original audio keeps playing.
 
-**Apple Silicon, macOS 15+** (the Apple speech engine additionally needs macOS 26).
+**Apple Silicon, macOS 15 or later.**
 
-## Setup
+## Install
 
-1. Open `🎙 Translate` in the menu bar → **Settings…**
-2. Pick a provider and paste that provider's API key (stored in your Keychain).
-3. Close Settings, click **Start Translation**.
-4. Grant **Screen Recording** when macOS asks, then quit and reopen the app —
-   macOS only applies the grant on a fresh launch.
+Download `Relay.dmg` from the [latest release](https://github.com/dhulser/Relay/releases/latest)
+and drag Relay to Applications, or:
 
-## Providers
+```bash
+brew install --cask dhulser/relay/relay
+```
 
-Audio is always captured with ScreenCaptureKit. What happens next depends on the
-provider:
+Relay is signed and notarized. It updates itself through Sparkle; you can turn
+that off in Settings → General.
 
-| Provider | Pipeline | Cost/hour | Language detection |
+## First run
+
+1. Click **Relay** in the menu bar, then **Settings**.
+2. Add an Anthropic or OpenAI API key. It goes in your Keychain and nowhere else.
+3. Under **Speech recognition**, download the **Small** model (466 MB, once).
+4. Close Settings and press **Start listening**. macOS asks for permission to
+   record system audio; allow it, then press start again if it didn't begin.
+
+That's it. Relay detects the spoken language automatically and translates into
+the language you pick.
+
+## What it does
+
+- **Follows the call.** Works in Zoom, Meet, Teams, a browser, anything, with no
+  bot joining the meeting. Subtitles float above every window, including
+  full-screen video, and never take focus. Drag them anywhere.
+- **Thirty-four languages, either direction**, detected as people speak, so a
+  meeting that switches between two is fine.
+- **Tells voices apart.** Optional speaker labels colour each line by who said
+  it. It knows two voices differ, not who anyone is.
+- **Shows the original** under each line if you want it.
+- **Listens where you point it:** everything on the Mac, only the apps you
+  choose, or the microphone for a conversation in the room.
+- **Compares engines side by side**, each in its own column on the same audio,
+  so you can decide which you would rather read.
+- **Keeps count** of words translated, languages heard, and time listened. Never
+  the words themselves.
+- **⌃⌥⌘R** starts and stops from anywhere. Optional launch at login.
+
+## Engines
+
+Relay has no server. Your Mac talks to the model provider directly, with your
+key. There are two ways to do it:
+
+| Engine | Pipeline | Where the audio goes | Cost per hour of speech |
 |---|---|---|---|
-| **Claude** | Whisper on-device → Claude | ~$0.31 (Haiku 4.5) | automatic |
-| **OpenAI** | Whisper on-device → `gpt-5.6-luna` | ~$0.07 | automatic |
-| **OpenAI Realtime** | audio → `gpt-realtime-translate` | $2.04 | automatic |
+| **Claude** | Whisper on this Mac → text to Claude | stays on your Mac | ~$0.19 (Haiku 4.5) |
+| **OpenAI** | Whisper on this Mac → text to `gpt-5.6-luna` | stays on your Mac | ~$0.04 |
+| **OpenAI Realtime** | audio streamed to `gpt-realtime-translate` | sent to OpenAI | $2.04 |
 
-Costs assume roughly twelve spoken phrases a minute. The two local providers
-bill only for text, so quiet content is nearly free; OpenAI Realtime bills by
-audio duration whether anyone is speaking or not.
+The local engines wait for a phrase to finish before a line appears; Realtime
+shows words while the speaker is still talking, at fifty times the price. The
+local engines bill only for text, so a quiet hour costs almost nothing.
 
-The two local providers can also use **Apple's** recogniser instead of Whisper.
-It is lower latency but handles one language at a time, so the source language
-must be set by hand — Whisper identifies the language of every utterance.
+Costs are what the providers charge you. Relay itself is free with your own
+key; a hosted option is planned.
 
-### Speaker labels
+### Speech recognition
 
-With the Whisper engine, **Label speakers** tags each line with the voice that
-said it — "Speaker 1", "Speaker 2" — in its own colour. A 27 MB voiceprint model
-(sherpa-onnx CAM++) runs on the same audio Whisper transcribes, so a label can
-never drift out of sync with its line.
+The local engines use [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+on Metal. Models download on demand into
+`~/Library/Application Support/co.kevel.Relay/Models`: **Small** (466 MB) is the
+default, **Base** (142 MB) is faster and guesses more, **Medium** (1.5 GB) is
+the most accurate. On macOS 26 you can switch to Apple's recogniser instead; it
+is lower latency but handles one language at a time.
 
-It recognises that two lines share a voice, not *who* anyone is. There is no
-enrolment: the first voice heard becomes Speaker 1. Measured separation is wide
-(same voice ~0.85 cosine, different voices ~0.1), so the 0.5 threshold sits in a
-large gap. Speakers reset each session, and it caps at six voices.
+Two optional filters, both off by default:
 
-Not available on OpenAI Realtime: that model returns text with no alignment to
-our audio, so there is nothing to attach a label to. Without labels, a pause
-longer than 1.4s draws a short rule instead.
-
-### Speech models
-
-Whisper models download on demand into
-`~/Library/Application Support/co.kevel.Relay/Models`.
-`Small` (466 MB) is the default and the right balance; `Base` (142 MB) is faster
-but guesses more on noisy audio; `Medium` (1.5 GB) is the most accurate.
-
-## Subtitles
-
-The overlay floats above other windows, including full-screen apps, and never
-takes keyboard focus. Drag it anywhere — the position is remembered.
-**Recenter Subtitles** in the menu puts it back.
-
-Roughly three lines stay visible. Partial text is coalesced on a ~150 ms cadence
-so captions don't flicker as tokens arrive.
+- **Label speakers** runs a 27 MB voiceprint model
+  ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) CAM++) on the same audio
+  Whisper transcribes, so a label can never drift out of sync with its line.
+  Voices reset each session. Telling Relay how many people are talking stops it
+  inventing extras.
+- **Filter out music and noise** runs Silero VAD inside Whisper, which stops it
+  turning a soundtrack into words.
 
 ## Privacy
 
-- No audio is ever written to disk, and no transcripts are stored.
-- With Whisper or Apple recognition, **audio never leaves the machine** — only
-  the recognised text is sent to the translation API.
-- With OpenAI Realtime, system audio is streamed to OpenAI.
-- The microphone is never used. No analytics, no telemetry.
+- Audio is never written to disk. Buffers exist only long enough to hand on.
+- With the local engines, **audio never leaves your Mac**; only the recognised
+  text is sent to the translation API. With Realtime, audio streams to OpenAI.
+- Nothing anyone said is stored or logged. If you turn on **Keep a transcript**,
+  lines are held in memory until you save them or press start again.
+- The microphone is used only when you choose it as the source.
+- Counts of words and time are kept in preferences. No analytics, no telemetry.
 - API keys live in the macOS Keychain and are never logged.
-
-## Releasing
-
-```bash
-./scripts/release.sh
-```
-
-Builds Release, notarizes and staples the app, wraps it in a drag-to-install
-disk image, notarizes that too, and verifies the result the way Gatekeeper
-will. Output: `dist/Relay.dmg`.
-
-Needs a **Developer ID Application** certificate and a notarytool credential:
-
-```bash
-xcrun notarytool store-credentials "notary" \
-  --apple-id "you@example.com" --team-id 4PJ4624484 \
-  --password "app-specific-password-from-appleid.apple.com"
-```
-
-Release builds use Developer ID with the hardened runtime; Debug keeps the
-development certificate for fast local iteration.
 
 ## Building
 
-Requires Xcode 26+ and [xcodegen](https://github.com/yonaskolb/XcodeGen).
+Requires Xcode 26 and [xcodegen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 xcodegen generate
 xcodebuild -project Relay.xcodeproj -scheme Relay \
-  -configuration Release -derivedDataPath build build
+  -configuration Debug -derivedDataPath build build
 ```
 
 `./run.sh` does a Debug build, relaunches, and tails the log.
 
-### whisper.cpp
-
-The static libraries in `Vendor/whisper` are checked in (~4 MB) so a clone
-builds without cmake. To change the pinned version (currently `v1.9.2`) or the
-build flags:
-
-```bash
-brew install cmake
-./scripts/build-whisper.sh
-```
-
-They are arm64-only and built with Metal plus Accelerate, which is why the app
-is Apple Silicon only.
-
-### sherpa-onnx
-
-`Vendor/sherpa` holds a prebuilt xcframework (~26 MB, thinned to arm64) used for
-speaker embeddings. To change the pinned version (currently `v1.13.8`):
-
-```bash
-./scripts/fetch-sherpa.sh
-```
-
-## Debugging
-
-```bash
-log stream --style compact --predicate 'subsystem == "co.kevel.Relay"'
-```
-
-Every stage is traced: `[Audio]` capture and format, `[Whisper]` or `[Speech]`
-recognition with the detected language, `[Claude]`/`[OpenAI]`/`[Realtime]` for
-translation, and `[Subtitles]` for what reaches the screen.
+The whisper.cpp static libraries (`Vendor/whisper`, ~4 MB, arm64, Metal +
+Accelerate) and the sherpa-onnx xcframework (`Vendor/sherpa`, ~26 MB) are
+checked in so a clone builds without cmake or network. To change the pinned
+versions: `scripts/build-whisper.sh` (needs `brew install cmake`) and
+`scripts/fetch-sherpa.sh`.
 
 ## Tests
 
@@ -147,7 +120,42 @@ xcodebuild test -project Relay.xcodeproj -scheme Relay \
   -configuration Debug -derivedDataPath build
 ```
 
-Covers audio-format conversion, subtitle coalescing, an end-to-end pass of the
-local speech path against a Spanish fixture, and voiceprint clustering against
-two real voices interleaved. Model-dependent tests skip if the model is not
-downloaded.
+Covers audio conversion, subtitle coalescing, the wire formats of all three
+providers, sentence splitting, Keychain round-trips under a test service, the
+language table against Whisper's, word counting across scripts, transcript
+formatting, stats, an end-to-end pass of the local speech path on a Spanish
+fixture, and voiceprint clustering on real voices. Model-dependent tests skip
+when the model isn't downloaded. CI runs the suite on every push.
+
+## Releasing
+
+```bash
+./scripts/release.sh            # build, notarize, staple, DMG, appcast, cask
+./scripts/release.sh --publish  # …and create the GitHub release
+```
+
+Needs a **Developer ID Application** certificate, a notarytool credential named
+`notary`, and the Sparkle EdDSA key in your login keychain (`generate_keys`).
+Run it from a Terminal you can see: signing the disk image asks for the key
+the first time. Afterwards copy `dist/relay.rb` to `Casks/relay.rb` in
+`dhulser/homebrew-relay`.
+
+```bash
+xcrun notarytool store-credentials "notary" \
+  --apple-id "you@example.com" --team-id 4PJ4624484 \
+  --password "app-specific-password-from-appleid.apple.com"
+```
+
+## Debugging
+
+```bash
+log stream --style compact --predicate 'subsystem == "co.kevel.Relay"'
+```
+
+Every stage is traced: `[Audio]`, `[Whisper]`/`[Speech]`, `[Claude]`/`[OpenAI]`/
+`[Realtime]`, `[Subtitles]`. What was said is deliberately not in there; Debug
+builds print it to stdout.
+
+## License
+
+MIT.

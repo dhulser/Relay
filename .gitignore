@@ -11,3 +11,4 @@ DerivedData/
 
 # Release artifacts
 dist/
+dist-site/
