@@ -3,7 +3,10 @@
   // One Worker: Stripe signup and billing, a translate proxy, an Instant-mode
   // WebSocket proxy, and a Durable Object per customer that meters minutes.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "relay-api",
+  "name": "api",
+  // Pinned so a deploy can never land on another Cloudflare account under the
+  // same login. This is the "Relay" account, not a personal one.
+  "account_id": "9cfb0a8741352f9333b769ad1e0fa4e0",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -13,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "relay",
-      "database_id": "REPLACE_AFTER_wrangler_d1_create",
+      "database_id": "498afd66-0dfc-400e-87a7-74ebfc2382c4",
       "migrations_dir": "migrations"
     }
   ],

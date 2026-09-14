@@ -14,8 +14,20 @@ final class HostedAccount: ObservableObject {
     /// account that already exists keeps working either way.
     static let offered = false
 
-    /// Where the Relay API lives. Filled in when the Worker was deployed.
-    static let baseURL = URL(string: "https://relay-api.onethreefive.workers.dev")!
+    /// Where the Relay API lives.
+    ///
+    /// A `relayAPIBase` default overrides it, so a test build can point at a
+    /// local `wrangler dev` or a staging Worker without a rebuild:
+    ///   defaults write co.kevel.Relay relayAPIBase http://localhost:8787
+    static let baseURL: URL = {
+        if let override = UserDefaults.standard.string(forKey: "relayAPIBase"),
+           let url = URL(string: override), url.scheme != nil {
+            return url
+        }
+        return URL(string: productionBase)!
+    }()
+
+    private static let productionBase = "https://api.relay-9cf.workers.dev"
     /// The Instant-mode proxy; same host, WebSocket.
     static var realtimeEndpoint: URL {
         var parts = URLComponents(url: baseURL.appendingPathComponent("/v1/realtime"), resolvingAgainstBaseURL: false)!

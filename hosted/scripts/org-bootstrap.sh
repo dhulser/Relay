@@ -13,7 +13,7 @@
 set -euo pipefail
 : "${BOOTSTRAP_SECRET:?}" "${IDP_CLIENT_ID:?}" "${IDP_CLIENT_SECRET:?}"
 SLUG="${1:?slug}"; NAME="${2:?name}"; DOMAINS="${3:?domains}"; ADMINS="${4:-}"
-API="${RELAY_API:-https://relay-api.onethreefive.workers.dev}"
+API="${RELAY_API:-https://api.relay-9cf.workers.dev}"
 ISSUER="${IDP_ISSUER:-https://accounts.google.com}"
 
 python3 - "$SLUG" "$NAME" "$DOMAINS" "$ADMINS" "$ISSUER" "$IDP_CLIENT_ID" "$IDP_CLIENT_SECRET" <<'PY' > /tmp/relay-org.json

@@ -5,7 +5,7 @@ Worker: Stripe signup and billing, a translate proxy, an Instant-mode
 WebSocket proxy, and a Durable Object per customer that meters minutes and
 enforces a monthly cap.
 
-Live at `https://relay-api.onethreefive.workers.dev`.
+Live at `https://api.relay-9cf.workers.dev`.
 
 ## How it fits together
 
@@ -56,7 +56,7 @@ member's minutes are tracked. Set-up is a bootstrap call and the admin console.
    ```
 
 3. **Webhook**. Stripe dashboard → Developers → Webhooks → add endpoint
-   `https://relay-api.onethreefive.workers.dev/webhooks/stripe` for
+   `https://api.relay-9cf.workers.dev/webhooks/stripe` for
    `customer.subscription.updated` and `customer.subscription.deleted`, then:
 
    ```bash

@@ -149,7 +149,7 @@ the org pool, and no seat fee. A minimum of five seats keeps it a team product.
 1. **Create an OAuth client at the identity provider.** For Google Workspace:
    Google Cloud Console → APIs & Services → Credentials → *Create credentials →
    OAuth client ID*, type *Web application*, authorized redirect URI
-   `https://relay-api.onethreefive.workers.dev/auth/callback`. Set the OAuth
+   `https://api.relay-9cf.workers.dev/auth/callback`. Set the OAuth
    consent screen to *Internal* so only the Workspace can sign in. Copy the
    client id and secret. (Microsoft Entra: an app registration with the same
    redirect URI; the issuer is `https://login.microsoftonline.com/<tenant>/v2.0`.)
@@ -164,7 +164,7 @@ the org pool, and no seat fee. A minimum of five seats keeps it a team product.
    The bootstrap secret was generated at deploy time; whoever deployed has it.
 
 3. **Sign in to the console** at
-   `https://relay-api.onethreefive.workers.dev/admin/login` with an admin
+   `https://api.relay-9cf.workers.dev/admin/login` with an admin
    address, paste the provider key (OpenAI for Luna and Instant mode, Anthropic
    for Claude models), pick the Local model, set the policy and limits.
 
