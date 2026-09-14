@@ -24,7 +24,19 @@ export default {
         case "GET /":
           return Response.redirect(env.SITE_URL, 302);
         case "GET /health":
-          return json({ ok: true });
+          // Reports which secrets are present, never their values. Cloudflare
+          // secrets belong to a Worker, so renaming or recreating one leaves
+          // it with none; without this that failure only shows up as a
+          // confusing 401 at the first request that needs one.
+          return json({
+            ok: true,
+            configured: {
+              orgKek: !!env.ORG_KEK,
+              bootstrap: !!env.BOOTSTRAP_SECRET,
+              openai: !!env.OPENAI_API_KEY,
+              stripe: !!env.STRIPE_SECRET_KEY,
+            },
+          });
 
         // ---- individual signup (Stripe)
         case "POST /v1/checkout": {

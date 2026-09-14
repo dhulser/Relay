@@ -65,6 +65,10 @@ member's minutes are tracked. Set-up is a bootstrap call and the admin console.
 
 4. **Deploy**: `npx wrangler deploy`.
 
+Secrets belong to a Worker, not to the account: renaming the Worker, or
+deleting and recreating it, leaves the new one with none. `GET /health` lists
+which are present so that shows up immediately rather than as a 401 later.
+
 ## Day to day
 
 ```bash
