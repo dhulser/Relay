@@ -12,9 +12,9 @@ const style = `
   .code { font: 500 14px/1.5 ui-monospace, Menlo, monospace; word-break: break-all; padding: 12px 14px; border: 1px solid #E6E4DE; border-radius: 10px; background: #fff; margin: 8px 0 18px; }
 `;
 
-function shell(title: string, body: string): Response {
+export function shell(title: string, body: string, extraStyle = ""): Response {
   return new Response(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${style}</style></head><body><div class="wrap">${body}</div></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${style}${extraStyle}</style></head><body><div class="wrap">${body}</div></body></html>`,
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
   );
 }
@@ -43,5 +43,24 @@ export function notPaidPage(): Response {
   return shell("Not finished", `
     <h1>The payment did not go through.</h1>
     <p>Nothing was charged. You can try again from Relay's Settings.</p>
+  `);
+}
+
+export function companyActivatedPage(token: string, orgName: string, email: string): Response {
+  const link = `relay://activate?token=${encodeURIComponent(token)}`;
+  return shell("Signed in to Relay", `
+    <h1>You're in.</h1>
+    <p>Signed in as <strong>${email}</strong> with ${orgName}'s Relay account. Open Relay to finish; it picks up your sign-in and starts using ${orgName}'s account straight away.</p>
+    <p><a class="button" href="${link}">Open Relay</a></p>
+    <p class="muted">If the button does nothing, paste this code into Relay's Settings under Sign in with your company. Keep it private; it is your sign-in.</p>
+    <div class="code">${token}</div>
+  `);
+}
+
+export function refusedPage(reason: string): Response {
+  return shell("Not signed in", `
+    <h1>That didn't work.</h1>
+    <p>${reason}</p>
+    <p class="muted">If you think you should have access, ask whoever runs Relay at your company.</p>
   `);
 }

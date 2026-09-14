@@ -400,6 +400,7 @@ final class AppState: ObservableObject {
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
                 self?.refreshReadiness()
+                DispatchQueue.main.async { self?.applyPolicy() }
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: AppDelegate.activationNotification)
@@ -418,6 +419,8 @@ final class AppState: ObservableObject {
         reconcileSourceLanguage()
         refreshReadiness()
         applyShortcut()
+        applyPolicy()
+        if hosted.isSignedIn { Task { await hosted.refreshUsage(); self.applyPolicy() } }
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
             + "\(WhisperRuntime.languageCount) languages; "
             + "sherpa-onnx \(SpeakerRuntime.version)")
@@ -808,6 +811,21 @@ final class AppState: ObservableObject {
         } catch {
             Log.error(.speakers, error.localizedDescription)
             return nil
+        }
+    }
+
+    // MARK: - Company policy
+
+    /// A company can switch off Instant mode, transcripts or the microphone.
+    /// The server refuses them too; this keeps the app from offering them.
+    func applyPolicy() {
+        guard hosted.isActive, hosted.isCompany else { return }
+        let policy = hosted.policy
+        if !policy.allowTranscript, keepTranscript { keepTranscript = false; transcript.removeAll() }
+        if !policy.allowMicrophone, audioSource == .microphone { audioSource = .systemAudio }
+        if !policy.allowInstant {
+            if provider == .openaiRealtime { provider = .openai }
+            comparedProviders.remove(.openaiRealtime)
         }
     }
 

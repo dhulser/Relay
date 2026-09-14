@@ -3,6 +3,10 @@
 A company signs in with its identity provider, and every member's usage runs
 through the company's account instead of personal keys.
 
+**Status:** phase 1 is built and deployed (key mode, Google/Microsoft/any-OIDC
+sign-in, per-member usage, admin console, policy). No seat licensing: the
+first company is Kevel, on its own key. Setup steps are at the end.
+
 ## The one decision that shapes everything
 
 Never put a shared API key on anyone's Mac. A key in a hundred Keychains is a
@@ -139,3 +143,36 @@ the org pool, and no seat fee. A minimum of five seats keeps it a team product.
 - Should an org be able to run Relay entirely on its own infrastructure
   (self-hosted Worker)? It is an MIT codebase; a `wrangler deploy` guide would
   make that a documentation task rather than a product.
+
+## Setting up a company (what exists today)
+
+1. **Create an OAuth client at the identity provider.** For Google Workspace:
+   Google Cloud Console → APIs & Services → Credentials → *Create credentials →
+   OAuth client ID*, type *Web application*, authorized redirect URI
+   `https://relay-api.onethreefive.workers.dev/auth/callback`. Set the OAuth
+   consent screen to *Internal* so only the Workspace can sign in. Copy the
+   client id and secret. (Microsoft Entra: an app registration with the same
+   redirect URI; the issuer is `https://login.microsoftonline.com/<tenant>/v2.0`.)
+
+2. **Create the company on Relay**, from your own terminal:
+
+   ```bash
+   BOOTSTRAP_SECRET=… IDP_CLIENT_ID=… IDP_CLIENT_SECRET=… \
+     ./hosted/scripts/org-bootstrap.sh kevel "Kevel" kevel.co dhulser@kevel.co
+   ```
+
+   The bootstrap secret was generated at deploy time; whoever deployed has it.
+
+3. **Sign in to the console** at
+   `https://relay-api.onethreefive.workers.dev/admin/login` with an admin
+   address, paste the provider key (OpenAI for Luna and Instant mode, Anthropic
+   for Claude models), pick the Local model, set the policy and limits.
+
+4. **Members** open Relay → Settings → *Sign in with your company*, enter
+   their work email, sign in with Google, and are done. They appear in the
+   console the moment they sign in; minutes appear as they listen.
+
+What the console shows: every person, last seen, this month's Local and
+Instant minutes, how many Macs, and buttons to sign someone out everywhere,
+suspend, or make admin. A CSV per month. Per-person and company-wide monthly
+limits, at list rates, so one runaway session cannot surprise anyone.

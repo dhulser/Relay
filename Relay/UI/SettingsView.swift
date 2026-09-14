@@ -14,9 +14,7 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
 
             Form {
-                if HostedAccount.offered || appState.hosted.isSignedIn {
-                    HostedSection(hosted: appState.hosted)
-                }
+                HostedSection(hosted: appState.hosted)
                 sourceSection
                 translationSection
                 languagesSection
@@ -47,7 +45,9 @@ struct SettingsView: View {
     private var sourceSection: some View {
         Section("Listen to") {
             Picker("", selection: $appState.audioSource) {
-                ForEach(AudioSource.allCases) { Text($0.displayName).tag($0) }
+                ForEach(AudioSource.allCases.filter { $0 != .microphone || appState.hosted.policy.allowMicrophone || !appState.hosted.isActive }) {
+                    Text($0.displayName).tag($0)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -78,7 +78,9 @@ struct SettingsView: View {
             if appState.hosted.isActive {
                 Picker("", selection: hostedProvider) {
                     Text("Local").tag(TranslationProvider.openai)
-                    Text("Instant").tag(TranslationProvider.openaiRealtime)
+                    if appState.hosted.policy.allowInstant {
+                        Text("Instant").tag(TranslationProvider.openaiRealtime)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -93,12 +95,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if appState.hosted.isActive {
                     let instant = appState.provider == .openaiRealtime
-                    Text(instant ? "Audio streams through Relay to OpenAI's translation model."
-                                 : "Speech is recognised on this Mac, then Relay translates the text.")
+                    let account = appState.hosted.companyName.map { "\($0)'s account" } ?? "Relay"
+                    Text(instant ? "Audio streams through \(account) to OpenAI's translation model."
+                                 : "Speech is recognised on this Mac, then translated on \(account).")
                     Text(appState.provider.characteristic)
                     HStack(spacing: 5) {
-                        Text(instant ? "$3.50 an hour" : "40¢ an hour")
-                        Text("·").foregroundStyle(.tertiary)
+                        if !appState.hosted.isCompany {
+                            Text(instant ? "$3.50 an hour" : "40¢ an hour")
+                            Text("·").foregroundStyle(.tertiary)
+                        }
                         Text(instant ? "audio is sent to OpenAI" : "audio stays on your Mac")
                     }
                     .foregroundStyle(instant ? .secondary : RelayTheme.listening)

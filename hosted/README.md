@@ -29,7 +29,13 @@ Relay.app ──WS  /v1/realtime?target=en ────────▶ Worker �
   (`rly_…`, 32 random bytes, only the hash is stored) and hands it to the app
   via `relay://activate?token=…`, with the code shown as a fallback.
 
-## One-time setup
+## Companies
+
+See `TEAMS.md`: a company signs in with Google, Microsoft or any OIDC
+provider, its own provider key is held encrypted on the server, and every
+member's minutes are tracked. Set-up is a bootstrap call and the admin console.
+
+## One-time setup (individual hosted, Stripe)
 
 1. **Stripe**. In the Stripe dashboard create an account, then with its
    *secret* key in the environment (never in a file):
@@ -81,3 +87,8 @@ npx wrangler d1 execute relay --remote --command "SELECT id, status, created_at 
 | `POST /v1/portal` | bearer | Stripe billing portal link |
 | `POST /v1/tokens` | bearer | a token for another Mac |
 | `POST /v1/signout` | bearer | revokes this token |
+| `GET /auth/start?email=` | none | company sign-in: redirects to the IdP |
+| `GET /auth/callback` | none | verifies the ID token, mints a device token |
+| `POST /admin/bootstrap` | bootstrap secret | creates a company |
+| `GET /admin` | admin cookie | the console |
+| `GET /admin/usage.csv?month=` | admin cookie | per-person, per-day minutes |

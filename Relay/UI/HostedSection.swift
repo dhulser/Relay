@@ -6,10 +6,16 @@ struct HostedSection: View {
     @State private var code = ""
     @State private var enteringCode = false
     @State private var copied = false
+    @State private var workEmail = ""
 
     var body: some View {
-        Section("Relay Hosted") {
-            if hosted.isSignedIn { account } else { offer }
+        Section(hosted.isCompany ? "Your company's account" : "Relay Hosted") {
+            if hosted.isSignedIn {
+                if hosted.isCompany { companyAccount } else { account }
+            } else {
+                companySignIn
+                if HostedAccount.offered { offer }
+            }
 
             if let error = hosted.lastError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -18,6 +24,70 @@ struct HostedSection: View {
             }
         }
         .task { await hosted.refreshUsage() }
+    }
+
+    // MARK: - Company sign-in
+
+    @ViewBuilder
+    private var companySignIn: some View {
+        Text("Does your company run Relay? Sign in with your work account and its keys are used for you, with nothing to set up.")
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+        HStack {
+            TextField("", text: $workEmail, prompt: Text("you@company.com"))
+                .textContentType(.emailAddress)
+                .onSubmit { signIn() }
+            Button("Sign in with your company") { signIn() }
+                .disabled(!workEmail.contains("@") || hosted.busy)
+        }
+        if !HostedAccount.offered {
+            Button(enteringCode ? "Cancel" : "I have a code") { enteringCode.toggle(); code = "" }
+                .buttonStyle(.link)
+            if enteringCode {
+                HStack {
+                    SecureField("", text: $code, prompt: Text("rly_…"))
+                        .onSubmit { activate() }
+                    Button("Activate") { activate() }
+                        .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || hosted.busy)
+                }
+            }
+        }
+    }
+
+    private func signIn() {
+        guard workEmail.contains("@") else { return }
+        hosted.signInWithCompany(email: workEmail)
+    }
+
+    // MARK: - Company account
+
+    @ViewBuilder
+    private var companyAccount: some View {
+        Toggle("Use \(hosted.companyName ?? "your company")'s account", isOn: $hosted.enabled)
+        if let usage = hosted.usage {
+            LabeledContent("Signed in as") {
+                Text("\(usage.member?.email ?? "") · \(usage.org?.name ?? "")")
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("This month") {
+                Text("\(usage.localMinutes) min Local · \(usage.instantMinutes) min Instant")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        Text(hosted.enabled
+             ? "Local and Instant run on your company's keys. Relay keeps minutes, never what was said."
+             : "Signed in, but using your own keys. Turn this on to switch back.")
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+        HStack {
+            if hosted.isCompanyAdmin {
+                Button("Open admin console") { hosted.openAdminConsole() }
+            }
+            Spacer()
+            Button("Sign out") { Task { await hosted.signOut() } }
+                .buttonStyle(.link)
+        }
+        .disabled(hosted.busy)
     }
 
     // MARK: - Not signed in

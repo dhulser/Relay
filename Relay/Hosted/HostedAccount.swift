@@ -37,12 +37,30 @@ final class HostedAccount: ObservableObject {
     @Published var freshToken: String?
 
     struct Usage: Decodable {
+        struct Org: Decodable { let id: String; let name: String; let localModel: String; let hasOpenAI: Bool; let hasAnthropic: Bool }
+        struct Member: Decodable { let email: String; let role: String }
+        struct Policy: Decodable, Equatable {
+            let allowInstant: Bool
+            let allowTranscript: Bool
+            let allowMicrophone: Bool
+            static let everything = Policy(allowInstant: true, allowTranscript: true, allowMicrophone: true)
+        }
+
+        /// "customer" (individual, Stripe) or "member" (a company account).
+        let kind: String?
+        let org: Org?
+        let member: Member?
+        let policy: Policy?
+        let reauthBy: Double?
+
         let status: String
         let month: String
         let localMinutes: Int
         let instantSeconds: Int
         let estimatedCents: Int
         let capCents: Int
+
+        var isCompany: Bool { kind == "member" }
 
         var instantMinutes: Int { instantSeconds / 60 }
         var estimatedText: String { Self.dollars(estimatedCents) }
@@ -55,6 +73,41 @@ final class HostedAccount: ObservableObject {
     /// Hosted mode is in effect: signed in and switched on.
     var isActive: Bool { isSignedIn && enabled }
 
+    /// A company account rather than an individual one. Remembered across
+    /// launches so Settings reads right before the first refresh lands.
+    @Published private(set) var companyName: String? {
+        didSet { defaults.set(companyName, forKey: Self.companyKey) }
+    }
+    var isCompany: Bool { companyName != nil }
+    var isCompanyAdmin: Bool { usage?.member?.role == "admin" }
+
+    /// What the company allows. Everything, for individuals.
+    @Published private(set) var policy: Usage.Policy = .everything
+    private static let policyKey = "hostedPolicy"
+    private static let companyKey = "hostedCompanyName"
+
+    /// Sends the browser to the company's identity provider. The result comes
+    /// back through relay://activate like everything else.
+    func signInWithCompany(email: String) {
+        var parts = URLComponents(url: Self.baseURL.appendingPathComponent("/auth/start"), resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "email", value: email.trimmingCharacters(in: .whitespaces)), URLQueryItem(name: "purpose", value: "app")]
+        lastError = nil
+        NSWorkspace.shared.open(parts.url!)
+    }
+
+    /// The admin console, for members who are admins.
+    func openAdminConsole() {
+        NSWorkspace.shared.open(Self.baseURL.appendingPathComponent("/admin"))
+    }
+
+    private func remember(_ usage: Usage) {
+        companyName = usage.isCompany ? usage.org?.name : nil
+        policy = usage.policy ?? .everything
+        if let data = try? JSONEncoder().encode(["allowInstant": policy.allowInstant, "allowTranscript": policy.allowTranscript, "allowMicrophone": policy.allowMicrophone]) {
+            defaults.set(data, forKey: Self.policyKey)
+        }
+    }
+
     private let defaults = UserDefaults.standard
     private static let enabledKey = "hostedEnabled"
     private static let keychainAccount = "relay-hosted-token"
@@ -62,6 +115,13 @@ final class HostedAccount: ObservableObject {
     init() {
         isSignedIn = KeychainService.loadSecret(account: Self.keychainAccount) != nil
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        companyName = defaults.string(forKey: Self.companyKey)
+        if let data = defaults.data(forKey: Self.policyKey),
+           let flags = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            policy = Usage.Policy(allowInstant: flags["allowInstant"] ?? true,
+                                  allowTranscript: flags["allowTranscript"] ?? true,
+                                  allowMicrophone: flags["allowMicrophone"] ?? true)
+        }
     }
 
     var token: String? { KeychainService.loadSecret(account: Self.keychainAccount) }
@@ -99,7 +159,8 @@ final class HostedAccount: ObservableObject {
             isSignedIn = true
             enabled = true
             self.usage = usage
-            Log.info(.app, "Relay Hosted activated (\(usage.status))")
+            remember(usage)
+            Log.info(.app, usage.isCompany ? "Signed in to \(usage.org?.name ?? "a company") account" : "Relay Hosted activated (\(usage.status))")
         } catch {
             lastError = error.localizedDescription
         }
@@ -110,8 +171,18 @@ final class HostedAccount: ObservableObject {
     func refreshUsage() async {
         guard let token else { return }
         do {
-            usage = try await Self.call("GET", "/v1/me", token: token)
+            let fresh: Usage = try await Self.call("GET", "/v1/me", token: token)
+            usage = fresh
+            remember(fresh)
             lastError = nil
+        } catch let error as HostedError {
+            // A revoked or expired sign-in: fall back to personal keys and say so.
+            if case .message(let text) = error, text.contains("Sign in") {
+                await signOut(quietly: true)
+                lastError = isCompany ? "Your company sign-in has expired. Sign in again." : text
+            } else {
+                lastError = error.localizedDescription
+            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -140,15 +211,17 @@ final class HostedAccount: ObservableObject {
         }
     }
 
-    func signOut() async {
-        if let token {
+    func signOut(quietly: Bool = false) async {
+        if let token, !quietly {
             _ = try? await Self.call("POST", "/v1/signout", token: token) as [String: Bool]
         }
         KeychainService.deleteSecret(account: Self.keychainAccount)
         isSignedIn = false
         usage = nil
         freshToken = nil
-        Log.info(.app, "Relay Hosted signed out")
+        companyName = nil
+        policy = .everything
+        Log.info(.app, "Hosted account signed out")
     }
 
     // MARK: - HTTP

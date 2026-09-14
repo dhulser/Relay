@@ -18,9 +18,15 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "METER", "class_name": "CustomerMeter" }]
+    "bindings": [
+      { "name": "METER", "class_name": "CustomerMeter" },
+      { "name": "ORG_METER", "class_name": "OrgMeter" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CustomerMeter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CustomerMeter"] },
+    { "tag": "v2", "new_sqlite_classes": ["OrgMeter"] }
+  ],
 
   "vars": {
     "SITE_URL": "https://dhulser.github.io/Relay/",
@@ -40,5 +46,6 @@
     "STRIPE_METER_INSTANT": "relay_instant_minutes"
   }
   // Secrets, set with `wrangler secret put <NAME>`:
-  //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, OPENAI_API_KEY
+  //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, OPENAI_API_KEY (individual hosted)
+  //   ORG_KEK, BOOTSTRAP_SECRET (teams)
 }

@@ -79,6 +79,12 @@ struct GeneralSettingsView: View {
                 .foregroundStyle(.secondary)
 
             Toggle("Keep a transcript while listening", isOn: $appState.keepTranscript)
+                .disabled(appState.hosted.isActive && !appState.hosted.policy.allowTranscript)
+            if appState.hosted.isActive && !appState.hosted.policy.allowTranscript {
+                Text("\(appState.hosted.companyName ?? "Your company") has turned transcripts off.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(RelayTheme.working)
+            }
             Text("Held in memory only, until you press start again or quit. Nothing is written anywhere unless you save it.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
