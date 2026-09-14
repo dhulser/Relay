@@ -14,7 +14,9 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
 
             Form {
-                HostedSection(hosted: appState.hosted)
+                if HostedAccount.offered || appState.hosted.isSignedIn {
+                    HostedSection(hosted: appState.hosted)
+                }
                 sourceSection
                 translationSection
                 languagesSection

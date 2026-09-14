@@ -45,6 +45,11 @@ final class SubtitleManager: ObservableObject {
     /// the translation does, so it is the first thing on screen for a line.
     @Published private(set) var currentOriginal: String?
 
+    /// Shown for a few seconds after Start so the user sees where captions
+    /// will appear and that Relay is alive. The first real text replaces it.
+    @Published private(set) var placeholder: String?
+    private var placeholderTimer: Timer?
+
     /// How often partial text may redraw. 100 ms still reads as captions
     /// rather than a terminal, and shaves latency off every streamed line.
     private static let refreshInterval: TimeInterval = 0.10
@@ -77,7 +82,21 @@ final class SubtitleManager: ObservableObject {
     private var lastFlush = Date.distantPast
     private var idleTimer: Timer?
 
-    var isEmpty: Bool { history.isEmpty && current.isEmpty && currentOriginal == nil }
+    var isEmpty: Bool { history.isEmpty && current.isEmpty && currentOriginal == nil && placeholder == nil }
+
+    func showPlaceholder(_ text: String, for seconds: TimeInterval = 8) {
+        placeholder = text
+        placeholderTimer?.invalidate()
+        placeholderTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.clearPlaceholder() }
+        }
+    }
+
+    private func clearPlaceholder() {
+        placeholderTimer?.invalidate()
+        placeholderTimer = nil
+        if placeholder != nil { placeholder = nil }
+    }
 
     // MARK: - Input
 
@@ -85,6 +104,7 @@ final class SubtitleManager: ObservableObject {
     func updatePartial(_ text: String, speaker: Int? = nil, origin: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        clearPlaceholder()
 
         // The first fragment of an utterance marks when speech resumed, which
         // is what the turn gap is measured against.
@@ -105,6 +125,7 @@ final class SubtitleManager: ObservableObject {
     func setOriginal(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        clearPlaceholder()
         if currentStartedAt == nil {
             currentStartedAt = Date()
             currentStartsNewTurn = !history.isEmpty
@@ -119,6 +140,7 @@ final class SubtitleManager: ObservableObject {
     /// `original` falls back to whatever `setOriginal` last received.
     func complete(_ text: String, speaker: Int? = nil, origin: String? = nil, original: String? = nil) {
         cancelPendingFlush()
+        clearPlaceholder()
         let heard = original ?? currentOriginal
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -145,6 +167,7 @@ final class SubtitleManager: ObservableObject {
 
     func clear() {
         cancelPendingFlush()
+        clearPlaceholder()
         idleTimer?.invalidate()
         idleTimer = nil
         history.removeAll()

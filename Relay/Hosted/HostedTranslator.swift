@@ -8,6 +8,7 @@ final class HostedTranslator: TextTranslating {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onFatalError: ((String) -> Void)?
+    var onTrouble: ((String?) -> Void)?
 
     private let token: String
     private let target: Language
@@ -60,8 +61,8 @@ final class HostedTranslator: TextTranslating {
                     ?? "Relay Hosted returned HTTP \(status)."
                 switch status {
                 case 401, 402: await reportFatal(message)   // signed out, cap reached, subscription lapsed
-                case 429: Log.error(.openai, "Hosted: rate limited — dropping this utterance")
-                default: Log.error(.openai, "Hosted: \(message)")
+                case 429: Log.error(.openai, "Hosted: rate limited — dropping this utterance"); await noteFailure(message)
+                default: Log.error(.openai, "Hosted: \(message)"); await noteFailure(message)
                 }
                 return
             }
@@ -81,11 +82,31 @@ final class HostedTranslator: TextTranslating {
             let final = translation.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !final.isEmpty, !Task.isCancelled else { return }
             Log.content(.translation, final)
+            await noteSuccess()
             await MainActor.run { self.onFinal?(final) }
         } catch {
             guard !Task.isCancelled else { return }
             Log.error(.openai, "Hosted request failed: \(error.localizedDescription)")
+            await noteFailure(error.localizedDescription)
         }
+    }
+
+    // MARK: - Trouble
+
+    /// Failures in a row. One is bad luck; two means the pipeline is broken
+    /// and the user should be told rather than left watching "Listening".
+    private var consecutiveFailures = 0
+
+    private func noteFailure(_ message: String) async {
+        consecutiveFailures += 1
+        guard consecutiveFailures >= 2 else { return }
+        await MainActor.run { self.onTrouble?(message) }
+    }
+
+    private func noteSuccess() async {
+        guard consecutiveFailures > 0 else { return }
+        consecutiveFailures = 0
+        await MainActor.run { self.onTrouble?(nil) }
     }
 
     private struct ErrorBody: Decodable { struct Inner: Decodable { let message: String }; let error: Inner }

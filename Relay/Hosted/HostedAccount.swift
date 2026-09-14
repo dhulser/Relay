@@ -10,6 +10,10 @@ import Foundation
 @MainActor
 final class HostedAccount: ObservableObject {
 
+    /// Whether signup is offered in Settings. Off until billing is live; an
+    /// account that already exists keeps working either way.
+    static let offered = false
+
     /// Where the Relay API lives. Filled in when the Worker was deployed.
     static let baseURL = URL(string: "https://relay-api.onethreefive.workers.dev")!
     /// The Instant-mode proxy; same host, WebSocket.

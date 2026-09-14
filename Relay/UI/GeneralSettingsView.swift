@@ -5,12 +5,14 @@ struct GeneralSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var style = SubtitleStyle.shared
     @ObservedObject var updater: UpdaterService
+    @State private var copiedDiagnostics = false
 
     var body: some View {
         Form {
             subtitlesSection
             listeningSection
             updatesSection
+            supportSection
         }
         .formStyle(.grouped)
     }
@@ -92,6 +94,26 @@ struct GeneralSettingsView: View {
                 }
                 .font(.system(size: 12.5))
             }
+        }
+    }
+
+    // MARK: - Support
+
+    private var supportSection: some View {
+        Section("Support") {
+            HStack {
+                Button(copiedDiagnostics ? "Copied" : "Copy diagnostics") {
+                    Diagnostics.copy(appState)
+                    copiedDiagnostics = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedDiagnostics = false }
+                }
+                Link("Report a problem", destination: URL(string: "https://github.com/dhulser/Relay/issues")!)
+                    .font(.system(size: 12.5))
+                Spacer()
+            }
+            Text("Copies Relay's own log from this run and the settings that matter, ready to paste into a report. It never includes anything that was said.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
         }
     }
 

@@ -26,6 +26,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// model is downloaded. Whisper then drops music and noise from each
     /// phrase before transcribing it.
     private let vadModelURL: URL?
+    /// Track the noise floor and raise the silence threshold with it. On for
+    /// the microphone, where rooms are noisy; off for system audio, which is
+    /// digitally clean and where a quiet speaker on a call must still be heard.
+    private let adaptiveSilence: Bool
 
     /// Optional voiceprint labelling. Nil when the user hasn't enabled it or
     /// the model isn't downloaded. Touched only on the inference queue.
@@ -55,6 +59,11 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     /// Silence is judged at this multiple of the tracked noise floor, or the
     /// fixed threshold, whichever is higher.
     private static let floorMultiple: Float = 3
+    /// But never above this. A room with steady noise and a quiet speaker
+    /// would otherwise lift the bar over the speech itself, and nothing would
+    /// ever be heard. Past this point, long phrases are cut by `maximumPhrase`
+    /// instead, which is late captions rather than none.
+    private static let maximumThreshold: Float = 0.03
     /// How fast the floor is allowed to creep back up, per 20 ms buffer, so a
     /// room that gets louder is followed within ten seconds or so.
     private static let floorRise: Float = 1.003
@@ -105,11 +114,12 @@ final class WhisperTranscriptionService: SpeechTranscribing {
     private var loggedFirstAudio = false
 
     init(model: WhisperModel, modelURL: URL, speakers: SpeakerEmbeddingService? = nil,
-         expectedSpeakers: Int? = nil, vadModelURL: URL? = nil) {
+         expectedSpeakers: Int? = nil, vadModelURL: URL? = nil, adaptiveSilence: Bool = false) {
         self.model = model
         self.modelURL = modelURL
         self.speakers = speakers
         self.vadModelURL = vadModelURL
+        self.adaptiveSilence = adaptiveSilence
         if let expectedSpeakers { clusterer.setMaximum(expectedSpeakers) }
     }
 
@@ -203,8 +213,13 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         let energy = Self.rms(samples)
 
         let captured: [Float]? = lock.withLock {
-            noiseFloor = min(noiseFloor * Self.floorRise + 0.00001, energy)
-            let threshold = max(Self.silenceThreshold, noiseFloor * Self.floorMultiple)
+            let threshold: Float
+            if adaptiveSilence {
+                noiseFloor = min(noiseFloor * Self.floorRise + 0.00001, energy)
+                threshold = max(Self.silenceThreshold, min(noiseFloor * Self.floorMultiple, Self.maximumThreshold))
+            } else {
+                threshold = Self.silenceThreshold
+            }
 
             if energy >= threshold {
                 speaking = true

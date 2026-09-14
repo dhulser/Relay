@@ -165,6 +165,9 @@ enum SessionStatus: Equatable {
 final class AppState: ObservableObject {
     @Published var status: SessionStatus = .idle
     @Published var errorDetail: String?
+    /// Listening, but translation keeps failing. Shown under the status so a
+    /// no-credits account is a sentence, not a silence.
+    @Published var warning: String?
 
     /// 0…1 peak level of the captured system audio, for the popover meter.
     @Published var audioLevel: Float = 0
@@ -475,6 +478,7 @@ final class AppState: ObservableObject {
         Log.info(.app, "Start requested — \(providers.map(\.shortLabel).joined(separator: " vs ")), "
             + "\(sourceLanguage.displayName) → \(targetLanguage.displayName)")
         errorDetail = nil
+        warning = nil
 
         // Every engine needs its key before anything starts, so a missing one
         // fails immediately rather than half-way through a comparison.
@@ -529,6 +533,11 @@ final class AppState: ObservableObject {
         status = .connecting
         subtitlePanel.show(streams: lanes.map(\.stream), labelled: providers.count > 1)
 
+        // Show where the captions will land before there are any.
+        for lane in lanes {
+            lane.stream.manager.showPlaceholder(lanes.count > 1 ? "Listening" : "Listening. Captions will appear here.")
+        }
+
         capture = source
         Task {
             do {
@@ -542,6 +551,7 @@ final class AppState: ObservableObject {
     func stop() {
         Log.info(.app, "Stop requested")
         status = .idle
+        warning = nil
         audioLevel = 0
         stats.endSession()
         teardownLanes()
@@ -663,6 +673,11 @@ final class AppState: ObservableObject {
         translator.onFatalError = { [weak self] message in
             MainActor.assumeIsolated { self?.fail(with: message, kind: nil) }
         }
+        translator.onTrouble = { [weak self] message in
+            MainActor.assumeIsolated {
+                self?.warning = message.map { "Translation isn't working. \($0)" }
+            }
+        }
     }
 
     private func wire(realtime: OpenAIRealtimeService, to stream: SubtitleStream, comparing: Bool) {
@@ -694,6 +709,11 @@ final class AppState: ObservableObject {
                     self.keep(translation: text, original: nil, speaker: nil)
                 }
                 if comparing { Log.content(.compare, "[\(label)] \(text)") }
+            }
+        }
+        realtime.onTrouble = { [weak self] message in
+            MainActor.assumeIsolated {
+                self?.warning = message.map { "Translation isn't working. \($0)" }
             }
         }
         realtime.onFatalError = { [weak self] message in
@@ -762,7 +782,8 @@ final class AppState: ObservableObject {
                 modelURL: store.url(for: whisperModel),
                 speakers: makeSpeakerService(),
                 expectedSpeakers: expectedSpeakers > 0 ? expectedSpeakers : nil,
-                vadModelURL: useVoiceFilter && vad.isInstalled(.silero) ? vad.url(for: .silero) : nil)
+                vadModelURL: useVoiceFilter && vad.isInstalled(.silero) ? vad.url(for: .silero) : nil,
+                adaptiveSilence: audioSource == .microphone)
         case .apple:
             guard #available(macOS 26.0, *) else {
                 throw EngineError.setupFailed(
@@ -896,6 +917,7 @@ final class AppState: ObservableObject {
 
         Log.error(.app, message)
         audioLevel = 0
+        warning = nil
         stats.endSession()
         teardownLanes()
         subtitlePanel.hide()

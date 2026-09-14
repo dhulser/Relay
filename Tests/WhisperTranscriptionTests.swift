@@ -17,6 +17,16 @@ final class WhisperTranscriptionTests: XCTestCase {
     )!
 
     func testTranscribesSpanishAndDetectsTheLanguage() async throws {
+        try await assertTranscribesSpanish(gain: 1, hiss: 0)
+    }
+
+    /// A quiet speaker on a call, with the faint steady hiss a call carries.
+    /// System audio uses the fixed threshold, so this must still be heard.
+    func testQuietSpeechOverSteadyHissStillTranscribes() async throws {
+        try await assertTranscribesSpanish(gain: 0.08, hiss: 0.003)
+    }
+
+    private func assertTranscribesSpanish(gain: Float, hiss: Float) async throws {
         let model = WhisperModel.base
         let modelURL = ModelStore<WhisperModel>.directory.appendingPathComponent(model.fileName)
         try XCTSkipUnless(
@@ -42,12 +52,16 @@ final class WhisperTranscriptionTests: XCTestCase {
 
         try await service.start(language: nil)   // nil = auto-detect
 
+        // A little hiss first, so the noise floor has something to settle on.
+        for buffer in Self.silenceBuffers(seconds: 1.0) {
+            service.receive(Self.shaped(buffer, gain: 1, hiss: hiss))
+        }
         for buffer in try Self.captureBuffers(from: fixture) {
-            service.receive(buffer)
+            service.receive(Self.shaped(buffer, gain: gain, hiss: hiss))
         }
         // Trailing silence closes the phrase, the way a real pause would.
         for buffer in Self.silenceBuffers(seconds: 1.2) {
-            service.receive(buffer)
+            service.receive(Self.shaped(buffer, gain: 1, hiss: hiss))
         }
 
         await fulfillment(of: [received], timeout: 30)
@@ -67,6 +81,18 @@ final class WhisperTranscriptionTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Scales the audio and adds uniform noise of the given RMS, in place.
+    private static func shaped(_ buffer: AVAudioPCMBuffer, gain: Float, hiss: Float) -> AVAudioPCMBuffer {
+        guard gain != 1 || hiss > 0, let channels = buffer.floatChannelData else { return buffer }
+        let amplitude = hiss * 1.732   // uniform noise: RMS = amplitude / sqrt(3)
+        for channel in 0..<Int(buffer.format.channelCount) {
+            for frame in 0..<Int(buffer.frameLength) {
+                channels[channel][frame] = channels[channel][frame] * gain + Float.random(in: -amplitude...amplitude)
+            }
+        }
+        return buffer
+    }
 
     /// Reads the fixture and re-chunks it into 20 ms 48 kHz stereo buffers,
     /// matching what the capture service emits.

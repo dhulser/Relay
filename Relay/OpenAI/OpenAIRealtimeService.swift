@@ -18,6 +18,9 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
     /// The source-language transcript, as it is heard. Whole utterance so far
     /// on each delta, then the finished text.
     var onSourceTranscript: ((String) -> Void)?
+    /// Repeated recoverable errors from the server; nil once text flows again.
+    var onTrouble: ((String?) -> Void)?
+    private var consecutiveErrors = 0
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -249,6 +252,10 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
 
         case .translatedDelta(let text):
             guard !text.isEmpty else { return }
+            if consecutiveErrors > 0 {
+                consecutiveErrors = 0
+                DispatchQueue.main.async { [weak self] in self?.onTrouble?(nil) }
+            }
             currentUtterance += text
             // The translation model streams continuously and only rarely marks
             // an utterance done, so without this everything piles into one
@@ -289,7 +296,14 @@ final class OpenAIRealtimeService: NSObject, TranslationEngine {
         case .error(let message):
             Log.error(.realtime, message)
             // A rejected key or model is not worth retrying.
-            if Self.isFatal(message) { fail(with: message) }
+            if Self.isFatal(message) {
+                fail(with: message)
+            } else {
+                consecutiveErrors += 1
+                if consecutiveErrors >= 2 {
+                    DispatchQueue.main.async { [weak self] in self?.onTrouble?(message) }
+                }
+            }
 
         case .other:
             break // already logged above by type

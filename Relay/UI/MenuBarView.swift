@@ -101,6 +101,11 @@ struct MenuBarView: View {
         .padding(.top, 10)
     }
 
+    private var hasProblem: Bool {
+        if case .error = appState.status { return true }
+        return appState.warning != nil
+    }
+
     @ViewBuilder
     private var notice: some View {
         if let detail = appState.errorDetail {
@@ -109,6 +114,25 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
+        }
+
+        if let warning = appState.warning {
+            Text(warning)
+                .font(.system(size: 11.5))
+                .foregroundStyle(RelayTheme.working)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        }
+
+        if hasProblem {
+            HStack(spacing: 12) {
+                Button("Open Settings") { showSettings() }
+                Button("Copy diagnostics") { Diagnostics.copy(appState) }
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(RelayTheme.accent)
+            .padding(.top, 6)
         }
 
         if appState.status == .permissionRequired {

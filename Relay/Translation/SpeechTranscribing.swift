@@ -41,6 +41,9 @@ protocol TextTranslating: AnyObject {
     var onFinal: ((String) -> Void)? { get set }
     /// Unrecoverable — bad key, refused model.
     var onFatalError: ((String) -> Void)? { get set }
+    /// Repeated recoverable failures (no credits, rate limits, network). The
+    /// message describes the last one; nil means it started working again.
+    var onTrouble: ((String?) -> Void)? { get set }
 
     func translate(_ utterance: String)
     func cancel()

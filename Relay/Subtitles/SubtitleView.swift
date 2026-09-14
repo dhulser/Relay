@@ -88,6 +88,11 @@ private struct SingleStreamView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let placeholder = manager.placeholder, manager.history.isEmpty, manager.current.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: style.smallSize * 1.2, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
             ForEach(Array(manager.history.enumerated()), id: \.element.id) { index, line in
                 let previous = index > 0 ? manager.history[index - 1].speaker : nil
                 if line.startsNewTurn && line.speaker == nil && index > 0 { turnDivider }
@@ -177,6 +182,11 @@ private struct ColumnView: View {
                 .foregroundStyle(tint.opacity(0.9))
                 .padding(.bottom, 2)
 
+            if let placeholder = manager.placeholder, manager.history.isEmpty, manager.current.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: style.columnSize * 0.8, weight: .medium, design: .rounded))
+                    .foregroundStyle(tint.opacity(0.5))
+            }
             ForEach(manager.history) { line in
                 Text(line.text)
                     .font(.system(size: style.columnSize, weight: .medium, design: .rounded))

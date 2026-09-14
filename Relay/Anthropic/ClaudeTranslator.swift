@@ -19,6 +19,7 @@ final class ClaudeTranslator: TextTranslating {
 
     /// Unrecoverable — bad key, refused model.
     var onFatalError: ((String) -> Void)?
+    var onTrouble: ((String?) -> Void)?
 
     private let apiKey: String
     private let model: ClaudeModel
@@ -107,11 +108,13 @@ final class ClaudeTranslator: TextTranslating {
             guard !final.isEmpty else { return }
             guard !Task.isCancelled else { return }
             Log.content(.translation, final)
+            await noteSuccess()
             await MainActor.run { self.onFinal?(final) }
 
         } catch {
             guard !Task.isCancelled else { return }
             Log.error(.claude, "Request failed: \(error.localizedDescription)")
+            await noteFailure(error.localizedDescription)
         }
     }
 
@@ -133,9 +136,29 @@ final class ClaudeTranslator: TextTranslating {
             await reportFatal("Model \(model.rawValue) is not available to this account.")
         case 429:
             Log.error(.claude, "Rate limited — dropping this utterance")
+            await noteFailure(message)
         default:
             Log.error(.claude, "HTTP \(status): \(message)")
+            await noteFailure(message)
         }
+    }
+
+    // MARK: - Trouble
+
+    /// Failures in a row. One is bad luck; two means the pipeline is broken
+    /// and the user should be told rather than left watching "Listening".
+    private var consecutiveFailures = 0
+
+    private func noteFailure(_ message: String) async {
+        consecutiveFailures += 1
+        guard consecutiveFailures >= 2 else { return }
+        await MainActor.run { self.onTrouble?(message) }
+    }
+
+    private func noteSuccess() async {
+        guard consecutiveFailures > 0 else { return }
+        consecutiveFailures = 0
+        await MainActor.run { self.onTrouble?(nil) }
     }
 
     /// What one line of the SSE stream means to us.
