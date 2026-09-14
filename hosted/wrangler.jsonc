@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "relay",
-      "database_id": "4be2c1ac-fef1-4ce5-8979-e20a53d2c092",
+      "database_id": "REPLACE_AFTER_wrangler_d1_create",
       "migrations_dir": "migrations"
     }
   ],
