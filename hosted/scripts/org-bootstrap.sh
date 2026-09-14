@@ -63,9 +63,14 @@ print(json.dumps({
     "clientId": os.environ["IDP_CLIENT_ID"],
     "clientSecret": os.environ["IDP_CLIENT_SECRET"],
   },
-}))' | curl -fsS -X POST "$API/admin/bootstrap" \
+}))' | curl -sS --fail-with-body -X POST "$API/admin/bootstrap" \
   --config <(printf 'header = "authorization: Bearer %s"\n' "$BOOTSTRAP_SECRET") \
-  -H "content-type: application/json" --data-binary @-
+  -H "content-type: application/json" --data-binary @- || {
+  echo >&2
+  echo "The API refused that. A 401 means the bootstrap secret is wrong; set a new one with" >&2
+  echo "  npx wrangler secret put BOOTSTRAP_SECRET" >&2
+  exit 1
+}
 
 cat <<OUT
 
