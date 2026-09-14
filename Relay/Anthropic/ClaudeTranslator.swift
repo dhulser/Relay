@@ -135,7 +135,7 @@ final class ClaudeTranslator: TextTranslating {
         case 404:
             await reportFatal("Model \(model.rawValue) is not available to this account.")
         case 429:
-            Log.error(.claude, "Rate limited — dropping this utterance")
+            Log.error(.claude, "HTTP 429, dropping this utterance: \(message)")
             await noteFailure(message)
         default:
             Log.error(.claude, "HTTP \(status): \(message)")

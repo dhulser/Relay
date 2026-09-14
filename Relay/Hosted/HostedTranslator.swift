@@ -61,7 +61,7 @@ final class HostedTranslator: TextTranslating {
                     ?? "Relay Hosted returned HTTP \(status)."
                 switch status {
                 case 401, 402: await reportFatal(message)   // signed out, cap reached, subscription lapsed
-                case 429: Log.error(.openai, "Hosted: rate limited — dropping this utterance"); await noteFailure(message)
+                case 429: Log.error(.openai, "Hosted: HTTP 429, dropping this utterance: \(message)"); await noteFailure(message)
                 default: Log.error(.openai, "Hosted: \(message)"); await noteFailure(message)
                 }
                 return

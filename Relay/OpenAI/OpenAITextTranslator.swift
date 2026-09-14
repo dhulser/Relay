@@ -134,7 +134,7 @@ final class OpenAITextTranslator: TextTranslating {
         case 404:
             await reportFatal("Model \(model.rawValue) is not available to this account.")
         case 429:
-            Log.error(.openai, "Rate limited — dropping this utterance")
+            Log.error(.openai, "HTTP 429, dropping this utterance: \(message)")
             await noteFailure(message)
         default:
             Log.error(.openai, "HTTP \(status): \(message)")
