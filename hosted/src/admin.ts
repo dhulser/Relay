@@ -3,7 +3,7 @@ import { json, problem } from "./env";
 import { resolveToken, type Principal } from "./auth";
 import { equalSecrets, seal } from "./crypto";
 import { shell } from "./pages";
-import { audit, membersWithUsage, orgById, orgDomains, revokeMemberDevices, setOrgKey, type Org } from "./orgs";
+import { audit, DEFAULT_MEMBER_CAP_CENTS, membersWithUsage, orgById, orgDomains, revokeMemberDevices, setOrgKey, type Org } from "./orgs";
 import { monthKey } from "./pricing";
 
 // The admin console: one page, a few forms. Signed into with the same SSO as
@@ -39,8 +39,8 @@ export async function bootstrap(request: Request, env: Env): Promise<Response> {
   const now = Date.now();
   const secret = await seal(body.idp.clientSecret, env.ORG_KEK);
   const statements = [
-    env.DB.prepare("INSERT INTO orgs (id, name, local_model, admin_emails, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(body.id, body.name, body.localModel ?? "gpt-5.6-luna", JSON.stringify((body.adminEmails ?? []).map((e) => e.toLowerCase())), now, now),
+    env.DB.prepare("INSERT INTO orgs (id, name, local_model, admin_emails, member_cap_cents, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(body.id, body.name, body.localModel ?? "gpt-5.6-luna", JSON.stringify((body.adminEmails ?? []).map((e) => e.toLowerCase())), DEFAULT_MEMBER_CAP_CENTS, now, now),
     env.DB.prepare("INSERT INTO org_idps (org_id, issuer, client_id, client_secret_ciphertext, client_secret_iv) VALUES (?, ?, ?, ?, ?)")
       .bind(body.id, body.idp.issuer.replace(/\/$/, ""), body.idp.clientId, secret.ciphertext, secret.iv),
     ...body.domains.map((d) => env.DB.prepare("INSERT INTO org_domains (domain, org_id) VALUES (?, ?)").bind(d.toLowerCase(), body.id)),

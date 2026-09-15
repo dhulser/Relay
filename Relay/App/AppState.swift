@@ -231,6 +231,13 @@ final class AppState: ObservableObject {
     var comparisonCostSummary: String {
         let running = activeProviders
         guard running.count > 1 else { return "" }
+        if hosted.isCompany {
+            return "on \(hosted.companyName ?? "your company")'s account"
+        }
+        if hosted.isActive {
+            return running.map { $0 == .openaiRealtime ? "$3.50 an hour" : "40¢ an hour" }
+                .joined(separator: " + ")
+        }
         return running.map(\.costPerHour).joined(separator: " + ")
     }
 
@@ -473,7 +480,17 @@ final class AppState: ObservableObject {
     /// comparison mode is on.
     var activeProviders: [TranslationProvider] {
         guard comparisonMode, comparedProviders.count >= 2 else { return [provider] }
-        return TranslationProvider.allCases.filter { comparedProviders.contains($0) }
+        var chosen = TranslationProvider.allCases.filter { comparedProviders.contains($0) }
+
+        // On a hosted account the proxy picks the model, so every local
+        // provider is the same engine. Two local lanes would be the same
+        // thing twice in two colours.
+        if hosted.isActive, chosen.filter(\.usesLocalSpeech).count > 1,
+           let first = chosen.firstIndex(where: \.usesLocalSpeech) {
+            let keep = chosen[first]
+            chosen.removeAll { $0.usesLocalSpeech && $0 != keep }
+        }
+        return chosen.count > 1 ? chosen : [provider]
     }
 
     func start() {

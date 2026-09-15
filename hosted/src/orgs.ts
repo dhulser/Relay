@@ -2,6 +2,10 @@ import type { Env } from "./env";
 import { open, randomId, randomToken, seal, sha256Hex } from "./crypto";
 import type { IdentityClaims } from "./oidc";
 
+/// What a new company starts with, per person per month, at list rates.
+/// About twelve hours of Local mode. Admins change it in the console.
+export const DEFAULT_MEMBER_CAP_CENTS = 500;
+
 export interface Policy {
   allowInstant: boolean;
   allowTranscript: boolean;
