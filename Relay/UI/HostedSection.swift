@@ -8,8 +8,17 @@ struct HostedSection: View {
     @State private var copied = false
     @State private var workEmail = ""
 
+    /// Names what is actually in the section: a company account once signed
+    /// in to one, Relay Hosted when that is on offer, otherwise the only
+    /// thing on show, which is company sign-in.
+    private var sectionTitle: String {
+        if hosted.isCompany { return "Your company's account" }
+        if hosted.isSignedIn || HostedAccount.offered { return "Relay Hosted" }
+        return "Your company"
+    }
+
     var body: some View {
-        Section(hosted.isCompany ? "Your company's account" : "Relay Hosted") {
+        Section(sectionTitle) {
             if hosted.isSignedIn {
                 if hosted.isCompany { companyAccount } else { account }
             } else {
