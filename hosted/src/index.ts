@@ -104,7 +104,11 @@ async function me(env: Env, who: Awaited<ReturnType<typeof authenticate>> & obje
   return json({
     kind: "member",
     status: "active",
-    org: { id: org.id, name: org.name, localModel: org.localModel, hasOpenAI: org.hasOpenAI, hasAnthropic: org.hasAnthropic },
+    org: {
+      id: org.id, name: org.name, localModel: org.localModel,
+      allowModelChoice: org.allowModelChoice,
+      hasOpenAI: org.hasOpenAI, hasAnthropic: org.hasAnthropic,
+    },
     member: { email: who.email, role: who.role },
     policy: org.policy,
     reauthBy: who.reauthBy,

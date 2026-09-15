@@ -16,6 +16,7 @@ export interface Org {
   id: string;
   name: string;
   localModel: string;
+  allowModelChoice: boolean;
   reauthDays: number;
   memberCapCents: number;
   orgCapCents: number;
@@ -26,7 +27,7 @@ export interface Org {
 }
 
 interface OrgRow {
-  id: string; name: string; local_model: string; reauth_days: number;
+  id: string; name: string; local_model: string; reauth_days: number; allow_model_choice: number;
   member_cap_cents: number; org_cap_cents: number; policy_json: string; admin_emails: string;
   openai_key_ciphertext: string | null; openai_key_iv: string | null;
   anthropic_key_ciphertext: string | null; anthropic_key_iv: string | null;
@@ -51,14 +52,15 @@ function toOrg(row: OrgRow): Org {
   let admins: string[] = [];
   try { admins = JSON.parse(row.admin_emails) as string[]; } catch { /* keep empty */ }
   return {
-    id: row.id, name: row.name, localModel: row.local_model, reauthDays: row.reauth_days,
+    id: row.id, name: row.name, localModel: row.local_model, allowModelChoice: !!row.allow_model_choice,
+    reauthDays: row.reauth_days,
     memberCapCents: row.member_cap_cents, orgCapCents: row.org_cap_cents,
     policy: parsePolicy(row.policy_json), adminEmails: admins.map((e) => e.toLowerCase()),
     hasOpenAI: !!row.openai_key_ciphertext, hasAnthropic: !!row.anthropic_key_ciphertext,
   };
 }
 
-const ORG_COLUMNS = `id, name, local_model, reauth_days, member_cap_cents, org_cap_cents, policy_json, admin_emails,
+const ORG_COLUMNS = `id, name, local_model, allow_model_choice, reauth_days, member_cap_cents, org_cap_cents, policy_json, admin_emails,
   openai_key_ciphertext, openai_key_iv, anthropic_key_ciphertext, anthropic_key_iv`;
 
 export function domainOf(email: string): string | null {

@@ -64,8 +64,23 @@ struct SettingsView: View {
 
     // MARK: - Translation
 
-    /// With Relay Hosted on, there are two ways to run and no keys: Local
-    /// (whatever local provider was selected) and Instant.
+    /// Which engines this account can run at all: everything with your own
+    /// keys, or whatever the company has given Relay a key for.
+    private var availableProviders: [TranslationProvider] {
+        guard appState.hosted.isActive else { return TranslationProvider.allCases }
+        return TranslationProvider.allCases.filter {
+            appState.hosted.orgProviders.contains($0)
+                && ($0 != .openaiRealtime || appState.hosted.policy.allowInstant)
+        }
+    }
+
+    /// A hosted account whose company fixed the model has two ways to run and
+    /// no model to pick, so it gets a two-way control rather than a list of
+    /// providers it cannot act on.
+    private var showsSimpleHostedPicker: Bool {
+        appState.hosted.isActive && !appState.hosted.allowsModelChoice
+    }
+
     private var hostedProvider: Binding<TranslationProvider> {
         Binding(
             get: { appState.provider == .openaiRealtime ? .openaiRealtime : .openai },
@@ -75,7 +90,7 @@ struct SettingsView: View {
 
     private var translationSection: some View {
         Section("Translation") {
-            if appState.hosted.isActive {
+            if showsSimpleHostedPicker {
                 Picker("", selection: hostedProvider) {
                     Text("Local").tag(TranslationProvider.openai)
                     if appState.hosted.policy.allowInstant {
@@ -86,7 +101,7 @@ struct SettingsView: View {
                 .labelsHidden()
             } else {
                 Picker("", selection: $appState.provider) {
-                    ForEach(TranslationProvider.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(availableProviders) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -122,27 +137,52 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
             .padding(.vertical, 2)
 
-            if appState.hosted.isActive {
-                EmptyView()
-            } else {
+            modelRow
+            if !appState.hosted.isActive { apiKeyRow }
+        }
+    }
+
+    /// The model: a picker when it is yours to choose, and otherwise a plain
+    /// statement of what the company settled on, rather than a control that
+    /// looks live and is not.
+    @ViewBuilder
+    private var modelRow: some View {
+        if appState.provider == .openaiRealtime {
+            EmptyView()
+        } else if showsSimpleHostedPicker {
+            LabeledContent("Model") {
+                Text(appState.hosted.orgModelName)
+                    .foregroundStyle(.secondary)
+            }
+            Text("\(appState.hosted.companyName ?? "Your company") runs Relay on one model. "
+                 + "An admin can let people choose their own.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        } else {
             switch appState.provider {
             case .claude:
                 Picker("Model", selection: $appState.claudeModel) {
                     ForEach(ClaudeModel.allCases) { model in
-                        Text("\(model.displayName) — \(model.subtitle)").tag(model)
+                        Text(appState.hosted.isActive ? model.displayName
+                                                      : "\(model.displayName) — \(model.subtitle)").tag(model)
                     }
                 }
             case .openai:
                 Picker("Model", selection: $appState.openAIModel) {
                     ForEach(OpenAITextModel.allCases) { model in
-                        Text("\(model.displayName) — \(model.subtitle)").tag(model)
+                        Text(appState.hosted.isActive ? model.displayName
+                                                      : "\(model.displayName) — \(model.subtitle)").tag(model)
                     }
                 }
             case .openaiRealtime:
                 EmptyView()
             }
 
-            apiKeyRow
+            if appState.hosted.isCompany {
+                Text("A larger model costs \(appState.hosted.companyName ?? "your company") more and uses up "
+                     + "your monthly limit faster.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
             }
         }
     }

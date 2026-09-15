@@ -49,7 +49,15 @@ final class HostedAccount: ObservableObject {
     @Published var freshToken: String?
 
     struct Usage: Decodable {
-        struct Org: Decodable { let id: String; let name: String; let localModel: String; let hasOpenAI: Bool; let hasAnthropic: Bool }
+        struct Org: Decodable {
+            let id: String
+            let name: String
+            let localModel: String
+            /// Whether members may run a model other than the company's default.
+            let allowModelChoice: Bool?
+            let hasOpenAI: Bool
+            let hasAnthropic: Bool
+        }
         struct Member: Decodable { let email: String; let role: String }
         struct Policy: Decodable, Equatable {
             let allowInstant: Bool
@@ -95,8 +103,30 @@ final class HostedAccount: ObservableObject {
 
     /// What the company allows. Everything, for individuals.
     @Published private(set) var policy: Usage.Policy = .everything
+
+    /// What the company's admin settled on, remembered across launches so
+    /// Settings reads correctly before the first refresh lands.
+    @Published private(set) var allowsModelChoice: Bool {
+        didSet { defaults.set(allowsModelChoice, forKey: Self.modelChoiceKey) }
+    }
+    @Published private(set) var orgModel: String? {
+        didSet { defaults.set(orgModel, forKey: Self.orgModelKey) }
+    }
+    /// Which providers the company has given Relay a key for.
+    @Published private(set) var orgProviders: Set<TranslationProvider> = [.openai, .openaiRealtime]
+
+    /// The company's default model, named the way the app names models.
+    var orgModelName: String {
+        guard let orgModel else { return "the company default" }
+        if let model = ClaudeModel(rawValue: orgModel) { return model.displayName }
+        if let model = OpenAITextModel(rawValue: orgModel) { return model.displayName }
+        return orgModel
+    }
+
     private static let policyKey = "hostedPolicy"
     private static let companyKey = "hostedCompanyName"
+    private static let modelChoiceKey = "hostedAllowsModelChoice"
+    private static let orgModelKey = "hostedOrgModel"
 
     /// Sends the browser to the company's identity provider. The result comes
     /// back through relay://activate like everything else.
@@ -115,6 +145,12 @@ final class HostedAccount: ObservableObject {
     private func remember(_ usage: Usage) {
         companyName = usage.isCompany ? usage.org?.name : nil
         policy = usage.policy ?? .everything
+        allowsModelChoice = usage.org?.allowModelChoice ?? false
+        orgModel = usage.org?.localModel
+        var providers: Set<TranslationProvider> = []
+        if usage.org?.hasOpenAI == true { providers.formUnion([.openai, .openaiRealtime]) }
+        if usage.org?.hasAnthropic == true { providers.insert(.claude) }
+        orgProviders = providers.isEmpty ? [.openai, .openaiRealtime] : providers
         if let data = try? JSONEncoder().encode(["allowInstant": policy.allowInstant, "allowTranscript": policy.allowTranscript, "allowMicrophone": policy.allowMicrophone]) {
             defaults.set(data, forKey: Self.policyKey)
         }
@@ -128,6 +164,8 @@ final class HostedAccount: ObservableObject {
         isSignedIn = KeychainService.loadSecret(account: Self.keychainAccount) != nil
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         companyName = defaults.string(forKey: Self.companyKey)
+        allowsModelChoice = defaults.bool(forKey: Self.modelChoiceKey)
+        orgModel = defaults.string(forKey: Self.orgModelKey)
         if let data = defaults.data(forKey: Self.policyKey),
            let flags = try? JSONDecoder().decode([String: Bool].self, from: data) {
             policy = Usage.Policy(allowInstant: flags["allowInstant"] ?? true,
@@ -233,6 +271,8 @@ final class HostedAccount: ObservableObject {
         freshToken = nil
         companyName = nil
         policy = .everything
+        allowsModelChoice = false
+        orgModel = nil
         Log.info(.app, "Hosted account signed out")
     }
 

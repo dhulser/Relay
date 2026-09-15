@@ -13,13 +13,16 @@ final class HostedTranslator: TextTranslating {
     private let token: String
     private let target: Language
     private let source: Language?
+    /// Nil leaves the choice to the company's default.
+    private let model: String?
     private let session: URLSession
     private var inFlight: [Task<Void, Never>] = []
 
-    init(token: String, source: SourceLanguageSetting, target: Language) {
+    init(token: String, source: SourceLanguageSetting, target: Language, model: String? = nil) {
         self.token = token
         self.target = target
         self.source = source.language
+        self.model = model
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
@@ -42,14 +45,15 @@ final class HostedTranslator: TextTranslating {
         inFlight.removeAll()
     }
 
-    private struct Body: Encodable { let text: String; let target: String; let source: String? }
+    private struct Body: Encodable { let text: String; let target: String; let source: String?; let model: String? }
 
     private func stream(_ text: String) async {
         var request = URLRequest(url: HostedAccount.baseURL.appendingPathComponent("/v1/translate"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = try? JSONEncoder().encode(Body(text: text, target: target.displayName, source: source?.displayName))
+        request.httpBody = try? JSONEncoder().encode(
+            Body(text: text, target: target.displayName, source: source?.displayName, model: model))
 
         do {
             let (bytes, response) = try await session.bytes(for: request)

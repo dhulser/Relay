@@ -5,11 +5,12 @@ import { meterFor } from "./meter";
 import { orgById, orgKeys } from "./orgs";
 import { orgMeterFor } from "./orgmeter";
 import { instructions, LANGUAGES, MAX_UTTERANCE_CHARS } from "./prompt";
+import { KNOWN_MODELS, localCentsPerMinute } from "./pricing";
 
-interface TranslateRequest { text?: unknown; target?: unknown; source?: unknown }
+interface TranslateRequest { text?: unknown; target?: unknown; source?: unknown; model?: unknown }
 
 /** Which provider and key a principal's Local mode runs on. */
-export async function resolveLocal(env: Env, who: Principal): Promise<
+export async function resolveLocal(env: Env, who: Principal, requested?: string): Promise<
   | { ok: true; provider: "openai" | "anthropic"; key: string; model: string; record: () => Promise<{ allowed: boolean; reason?: string }> }
   | { ok: false; status: number; message: string }
 > {
@@ -21,12 +22,28 @@ export async function resolveLocal(env: Env, who: Principal): Promise<
   }
   const org = await orgById(env, who.orgId);
   if (!org) return { ok: false, status: 403, message: "Your company's Relay account no longer exists." };
+
+  // A member may ask for a different model only when the admin allows it, and
+  // only one this proxy knows the price of.
+  let model = org.localModel;
+  if (requested && requested !== org.localModel) {
+    if (!org.allowModelChoice) {
+      return { ok: false, status: 403, message: `${org.name} runs Relay on one model, chosen by whoever administers it.` };
+    }
+    if (!KNOWN_MODELS.includes(requested)) {
+      return { ok: false, status: 400, message: "Relay does not know that model." };
+    }
+    model = requested;
+  }
+
   const keys = await orgKeys(env, who.orgId);
-  const provider: "openai" | "anthropic" = org.localModel.startsWith("claude") ? "anthropic" : "openai";
+  const provider: "openai" | "anthropic" = model.startsWith("claude") ? "anthropic" : "openai";
   const key = provider === "anthropic" ? keys.anthropic : keys.openai;
   if (!key) return { ok: false, status: 503, message: `${org.name} has not added ${provider === "anthropic" ? "an Anthropic" : "an OpenAI"} key to Relay yet.` };
+
   const meter = orgMeterFor(env, who.orgId, who.memberId, { memberCapCents: org.memberCapCents, orgCapCents: org.orgCapCents });
-  return { ok: true, provider, key, model: org.localModel, record: () => meter.local() };
+  const rate = localCentsPerMinute(model);
+  return { ok: true, provider, key, model, record: () => meter.local(rate) };
 }
 
 /** POST /v1/translate — one utterance in, an OpenAI-shaped SSE stream out.
@@ -43,7 +60,7 @@ export async function translate(request: Request, env: Env, who: Principal): Pro
   if (!LANGUAGES.has(target)) return problem(400, "Unknown target language.");
   if (source && !LANGUAGES.has(source)) return problem(400, "Unknown source language.");
 
-  const route = await resolveLocal(env, who);
+  const route = await resolveLocal(env, who, typeof body.model === "string" ? body.model : undefined);
   if (!route.ok) return problem(route.status, route.message);
 
   const allowance = await route.record();

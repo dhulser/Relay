@@ -6,7 +6,14 @@ import { INSTANT_CENTS_PER_MINUTE, LOCAL_CENTS_PER_MINUTE, minuteKey, monthKey }
 // changes them, so two Macs cannot race past a limit. Every change is also
 // rolled into usage_daily in D1 for the console and the CSV export.
 
-interface MemberCounters { localMinutes: number; instantSeconds: number; lastLocalMinute: number }
+interface MemberCounters {
+  localMinutes: number;
+  /// Money spent on Local mode, accumulated as it happens, because the rate
+  /// depends on which model each minute ran.
+  localCents?: number;
+  instantSeconds: number;
+  lastLocalMinute: number;
+}
 interface MonthRecord { members: Record<string, MemberCounters> }
 
 export interface OrgAllowance {
@@ -22,7 +29,10 @@ const RATE_WINDOW_MS = 60_000;
 const MAX_TRANSLATIONS_PER_MINUTE = 60;
 
 function cents(c: MemberCounters): number {
-  return Math.ceil(c.localMinutes * LOCAL_CENTS_PER_MINUTE + (c.instantSeconds / 60) * INSTANT_CENTS_PER_MINUTE);
+  // Counters written before the meter knew about models carry no localCents;
+  // fall back to the flat rate for those.
+  const local = c.localCents ?? c.localMinutes * LOCAL_CENTS_PER_MINUTE;
+  return Math.ceil(local + (c.instantSeconds / 60) * INSTANT_CENTS_PER_MINUTE);
 }
 
 export class OrgMeter implements DurableObject {
@@ -35,10 +45,12 @@ export class OrgMeter implements DurableObject {
     this.orgId = url.searchParams.get("org") ?? this.orgId;
     if (!this.orgId) return new Response("org required", { status: 400 });
 
-    const body = request.method === "POST" ? ((await request.json()) as { member: string; seconds?: number } & Limits) : null;
+    const body = request.method === "POST"
+      ? ((await request.json()) as { member: string; seconds?: number; centsPerMinute?: number } & Limits)
+      : null;
     switch (`${request.method} ${url.pathname}`) {
       case "POST /local":
-        return Response.json(await this.recordLocal(body!.member, body!));
+        return Response.json(await this.recordLocal(body!.member, body!, body!.centsPerMinute ?? LOCAL_CENTS_PER_MINUTE));
       case "POST /instant":
         return Response.json(await this.recordInstant(body!.member, body!.seconds ?? 0, body!));
       case "POST /allowance":
@@ -80,7 +92,7 @@ export class OrgMeter implements DurableObject {
     return { allowed: true, memberCents: mine, orgCents: everyone };
   }
 
-  private async recordLocal(member: string, limits: Limits): Promise<OrgAllowance> {
+  private async recordLocal(member: string, limits: Limits, centsPerMinute: number): Promise<OrgAllowance> {
     if (!(await this.withinRateLimit(member))) {
       const current = await this.allowance(member, await this.month(), limits);
       return { ...current, allowed: false, reason: "Too many translations in a minute." };
@@ -94,6 +106,7 @@ export class OrgMeter implements DurableObject {
     if (minute !== c.lastLocalMinute) {
       c.lastLocalMinute = minute;
       c.localMinutes += 1;
+      c.localCents = (c.localCents ?? 0) + centsPerMinute;
       await this.save(record);
       await this.rollup(member, 1, 0);
     }
@@ -150,7 +163,7 @@ export function orgMeterFor(env: Env, orgId: string, memberId: string, limits: L
   };
   const payload = { member: memberId, ...limits };
   return {
-    local: () => call<OrgAllowance>("POST", "local", payload),
+    local: (centsPerMinute?: number) => call<OrgAllowance>("POST", "local", { ...payload, centsPerMinute }),
     instant: (seconds: number) => call<OrgAllowance>("POST", "instant", { ...payload, seconds }),
     allowance: () => call<OrgAllowance>("POST", "allowance", payload),
     usage: () => call<{ month: string; localMinutes: number; instantSeconds: number; estimatedCents: number }>("GET", "usage"),

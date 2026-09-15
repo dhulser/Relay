@@ -26,3 +26,27 @@ describe("pricing", () => {
     expect(minuteKey(t)).toBe(Math.floor(t.getTime() / 60000));
   });
 });
+
+describe("per-model rates", () => {
+  it("prices every model the app can offer", async () => {
+    const { MODEL_CENTS_PER_HOUR, KNOWN_MODELS } = await import("../src/pricing");
+    for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
+                         "claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]) {
+      expect(KNOWN_MODELS).toContain(model);
+      expect(MODEL_CENTS_PER_HOUR[model]).toBeGreaterThan(0);
+    }
+  });
+
+  it("charges a bigger model more per minute, which is the whole point", async () => {
+    const { localCentsPerMinute } = await import("../src/pricing");
+    expect(localCentsPerMinute("claude-opus-5")).toBeGreaterThan(localCentsPerMinute("claude-haiku-4-5"));
+    expect(localCentsPerMinute("gpt-5.6-sol")).toBeGreaterThan(localCentsPerMinute("gpt-5.6-luna"));
+    // 25x between the cheapest and dearest is why a flat rate could not stay honest.
+    expect(localCentsPerMinute("gpt-5.6-sol") / localCentsPerMinute("gpt-5.6-luna")).toBeGreaterThan(20);
+  });
+
+  it("falls back to the flat rate for a model it does not know", async () => {
+    const { localCentsPerMinute, LOCAL_CENTS_PER_MINUTE } = await import("../src/pricing");
+    expect(localCentsPerMinute("something-else")).toBe(LOCAL_CENTS_PER_MINUTE);
+  });
+});

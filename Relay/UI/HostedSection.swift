@@ -72,7 +72,14 @@ struct HostedSection: View {
 
     @ViewBuilder
     private var companyAccount: some View {
-        Toggle("Use \(hosted.companyName ?? "your company")'s account", isOn: $hosted.enabled)
+        // A switch rather than a toggle: with both configured, this is a
+        // choice between two accounts, not a feature being turned on.
+        Picker("", selection: $hosted.enabled) {
+            Text(hosted.companyName ?? "Company").tag(true)
+            Text("My own keys").tag(false)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
         if let usage = hosted.usage {
             LabeledContent("Signed in as") {
                 Text("\(usage.member?.email ?? "") · \(usage.org?.name ?? "")")

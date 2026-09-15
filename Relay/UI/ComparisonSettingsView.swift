@@ -24,8 +24,8 @@ struct ComparisonSettingsView: View {
             if appState.comparisonMode {
                 if offered.count < 2 {
                     Section {
-                        Label("\(appState.hosted.companyName ?? "Your company") has turned Instant mode off, "
-                              + "so there is only one engine to run.",
+                        Label("\(appState.hosted.companyName ?? "Your company") has left one engine to run, "
+                              + "so there is nothing to compare it against.",
                               systemImage: "exclamationmark.circle.fill")
                             .font(.system(size: 11.5))
                             .foregroundStyle(RelayTheme.working)
@@ -88,14 +88,31 @@ struct ComparisonSettingsView: View {
     /// company's admin chose it — so the choice is Local against Instant.
     private var offered: [ComparisonEngine] {
         guard appState.hosted.isActive else { return ComparisonEngine.all }
-        var list: [ComparisonEngine] = [.openai(appState.openAIModel)]
-        if appState.hosted.policy.allowInstant { list.append(.instant) }
-        return list
+
+        var list: [ComparisonEngine] = []
+        if appState.hosted.allowsModelChoice {
+            // Only models the company has given Relay a key for.
+            if appState.hosted.orgProviders.contains(.claude) {
+                list += ClaudeModel.allCases.map(ComparisonEngine.claude)
+            }
+            if appState.hosted.orgProviders.contains(.openai) {
+                list += OpenAITextModel.allCases.map(ComparisonEngine.openai)
+            }
+        } else {
+            list.append(.openai(appState.openAIModel))
+        }
+        if appState.hosted.policy.allowInstant, appState.hosted.orgProviders.contains(.openaiRealtime) {
+            list.append(.instant)
+        }
+        return list.isEmpty ? [.openai(appState.openAIModel)] : list
     }
 
     private func label(for engine: ComparisonEngine) -> String {
         guard appState.hosted.isActive else { return engine.shortLabel }
-        return engine.isInstant ? "Instant" : "Local"
+        if engine.isInstant { return "Instant" }
+        // With a choice of models, name the one being run; without, the
+        // column is just "Local" whatever the proxy happens to use.
+        return appState.hosted.allowsModelChoice ? engine.shortLabel : "Local"
     }
 
     /// Providers in the comparison with no key saved, named once each.

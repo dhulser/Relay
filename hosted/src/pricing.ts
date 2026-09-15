@@ -14,6 +14,27 @@ export const STRIPE_UNIT_AMOUNT_DECIMAL = {
   instant: INSTANT_CENTS_PER_MINUTE.toFixed(4), // "5.8333"
 };
 
+/// What an hour of talking costs on each model, in cents, measured the way
+/// the app's own figures were. A company runs on its own provider key, so its
+/// meter charges what the model actually costs rather than a flat rate; that
+/// is what keeps a monthly limit meaningful when models differ 25-fold.
+export const MODEL_CENTS_PER_HOUR: Record<string, number> = {
+  "gpt-5.6-luna": 4,
+  "gpt-5.6-terra": 40,
+  "gpt-5.6-sol": 100,
+  "claude-haiku-4-5": 19,
+  "claude-sonnet-5": 57,
+  "claude-opus-5": 95,
+};
+
+/// Models a hosted account may run. Anything else is refused rather than
+/// passed through, so the proxy cannot be steered onto an unpriced model.
+export const KNOWN_MODELS = Object.keys(MODEL_CENTS_PER_HOUR);
+
+export function localCentsPerMinute(model: string): number {
+  return (MODEL_CENTS_PER_HOUR[model] ?? LOCAL_CENTS_PER_HOUR) / 60;
+}
+
 export interface MonthUsage {
   localMinutes: number;
   instantSeconds: number;

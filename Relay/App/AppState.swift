@@ -508,9 +508,11 @@ final class AppState: ObservableObject {
     var activeEngines: [ComparisonEngine] {
         guard comparisonMode, comparisonLeft != comparisonRight else { return [currentEngine] }
 
-        // On a hosted account the proxy picks the model, so two local engines
-        // would be the same thing twice in two colours.
-        if hosted.isActive, !comparisonLeft.isInstant, !comparisonRight.isInstant {
+        // Where the proxy picks the model, two local engines are the same
+        // thing twice in two colours. When the company lets members choose,
+        // they are genuinely different and both run.
+        if hosted.isActive, !hosted.allowsModelChoice,
+           !comparisonLeft.isInstant, !comparisonRight.isInstant {
             return [currentEngine]
         }
         return [comparisonLeft, comparisonRight]
@@ -629,7 +631,12 @@ final class AppState: ObservableObject {
         for (index, engine) in engines.enumerated() {
             // A hosted account runs whatever model the proxy picks, so the
             // column says Local rather than naming a model it is not using.
-            let label = hosted.isActive ? (engine.isInstant ? "Instant" : "Local") : engine.shortLabel
+            let label: String
+            if hosted.isActive {
+                label = engine.isInstant ? "Instant" : (hosted.allowsModelChoice ? engine.shortLabel : "Local")
+            } else {
+                label = engine.shortLabel
+            }
             let stream = SubtitleStream(label: label, tintIndex: index)
             let candidate = engine.provider
 
@@ -797,7 +804,16 @@ final class AppState: ObservableObject {
     private func makeTranslator(for engine: ComparisonEngine) throws -> TextTranslating {
         // Hosted Local mode: the API owns the prompt and picks the model.
         if hosted.isActive, let token = hosted.token {
-            return HostedTranslator(token: token, source: sourceLanguage, target: targetLanguage)
+            // Name the model only when the company allows members to choose;
+            // otherwise the proxy uses whatever the admin settled on.
+            let chosen: String?
+            switch engine {
+            case .claude(let model): chosen = hosted.allowsModelChoice ? model.rawValue : nil
+            case .openai(let model): chosen = hosted.allowsModelChoice ? model.rawValue : nil
+            case .instant: chosen = nil
+            }
+            return HostedTranslator(token: token, source: sourceLanguage,
+                                    target: targetLanguage, model: chosen)
         }
         guard let apiKey = KeychainService.loadAPIKey(for: engine.provider) else {
             throw EngineError.missingAPIKey(engine.provider)
@@ -869,6 +885,12 @@ final class AppState: ObservableObject {
     func applyPolicy() {
         guard hosted.isActive, hosted.isCompany else { return }
         let policy = hosted.policy
+
+        // A company that has given Relay only one provider's key cannot run
+        // the other, so do not leave it selected.
+        if !hosted.orgProviders.contains(provider), let fallback = hosted.orgProviders.sorted(by: { $0.rawValue < $1.rawValue }).first {
+            provider = fallback
+        }
         if !policy.allowTranscript, keepTranscript { keepTranscript = false; transcript.removeAll() }
         if !policy.allowMicrophone, audioSource == .microphone { audioSource = .systemAudio }
         if !policy.allowInstant {

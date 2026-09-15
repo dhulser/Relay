@@ -168,6 +168,8 @@ async function consolePage(env: Env, org: Org, who: Extract<Principal, { kind: "
         ${["gpt-5.6-luna", "gpt-5.6-terra", "claude-haiku-4-5", "claude-sonnet-5"].map((m) => `<option ${m === org.localModel ? "selected" : ""}>${m}</option>`).join("")}
       </select>
       <p class="muted" style="font-size:13px">Claude models use the Anthropic key; GPT models use the OpenAI key. Instant mode always needs the OpenAI key.</p>
+      <div class="check"><input type="checkbox" name="allowModelChoice" id="amc" ${org.allowModelChoice ? "checked" : ""}><label for="amc" style="margin:0">Let people choose their own model</label></div>
+      <p class="muted" style="font-size:13px">Off by default. Each model is charged at its own rate, so someone who picks a larger one reaches their monthly limit sooner rather than costing you more than the limit.</p>
       <div class="check"><input type="checkbox" name="allowInstant" id="ai" ${org.policy.allowInstant ? "checked" : ""}><label for="ai" style="margin:0">Allow Instant mode (audio streams to OpenAI)</label></div>
       <div class="check"><input type="checkbox" name="allowTranscript" id="at" ${org.policy.allowTranscript ? "checked" : ""}><label for="at" style="margin:0">Allow keeping a transcript</label></div>
       <div class="check"><input type="checkbox" name="allowMicrophone" id="am" ${org.policy.allowMicrophone ? "checked" : ""}><label for="am" style="margin:0">Allow the microphone as a source</label></div>
@@ -196,6 +198,7 @@ async function saveKeys(request: Request, env: Env, org: Org, who: Extract<Princ
 async function saveSettings(request: Request, env: Env, org: Org, who: Extract<Principal, { kind: "member" }>): Promise<Response> {
   const form = await request.formData();
   const model = String(form.get("local_model") ?? org.localModel);
+  const allowModelChoice = form.get("allowModelChoice") === "on" ? 1 : 0;
   const policy = {
     allowInstant: form.get("allowInstant") === "on",
     allowTranscript: form.get("allowTranscript") === "on",
@@ -204,9 +207,9 @@ async function saveSettings(request: Request, env: Env, org: Org, who: Extract<P
   const memberCap = Math.max(0, Math.round(Number(form.get("member_cap") ?? 0) * 100));
   const orgCap = Math.max(0, Math.round(Number(form.get("org_cap") ?? 0) * 100));
   const reauth = Math.min(365, Math.max(1, Math.round(Number(form.get("reauth_days") ?? 30))));
-  await env.DB.prepare("UPDATE orgs SET local_model = ?, policy_json = ?, member_cap_cents = ?, org_cap_cents = ?, reauth_days = ?, updated_at = ? WHERE id = ?")
-    .bind(model, JSON.stringify(policy), memberCap, orgCap, reauth, Date.now(), org.id).run();
-  await audit(env, org.id, who.email, "settings.saved", JSON.stringify({ model, policy, memberCap, orgCap, reauth }));
+  await env.DB.prepare("UPDATE orgs SET local_model = ?, allow_model_choice = ?, policy_json = ?, member_cap_cents = ?, org_cap_cents = ?, reauth_days = ?, updated_at = ? WHERE id = ?")
+    .bind(model, allowModelChoice, JSON.stringify(policy), memberCap, orgCap, reauth, Date.now(), org.id).run();
+  await audit(env, org.id, who.email, "settings.saved", JSON.stringify({ model, allowModelChoice, policy, memberCap, orgCap, reauth }));
   return Response.redirect(`${new URL(request.url).origin}/admin?saved=1`, 303);
 }
 
