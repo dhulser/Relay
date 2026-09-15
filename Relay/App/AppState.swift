@@ -220,22 +220,33 @@ final class AppState: ObservableObject {
         didSet { defaults.set(comparisonMode, forKey: Self.compareKey) }
     }
 
-    /// Which engines a comparison runs. Two or more for the mode to do anything.
-    @Published var comparedProviders: Set<TranslationProvider> {
-        didSet {
-            defaults.set(comparedProviders.map(\.rawValue), forKey: Self.comparedKey)
+    /// The two engines a comparison puts side by side, in column order.
+    @Published var comparisonLeft: ComparisonEngine {
+        didSet { defaults.set(comparisonLeft.storageValue, forKey: Self.leftKey) }
+    }
+    @Published var comparisonRight: ComparisonEngine {
+        didSet { defaults.set(comparisonRight.storageValue, forKey: Self.rightKey) }
+    }
+
+    /// The engine a normal session runs: the selected provider with whichever
+    /// model is chosen for it.
+    var currentEngine: ComparisonEngine {
+        switch provider {
+        case .claude: return .claude(claudeModel)
+        case .openai: return .openai(openAIModel)
+        case .openaiRealtime: return .instant
         }
     }
 
     /// Combined hourly cost of everything a comparison would run.
     var comparisonCostSummary: String {
-        let running = activeProviders
+        let running = activeEngines
         guard running.count > 1 else { return "" }
         if hosted.isCompany {
             return "on \(hosted.companyName ?? "your company")'s account"
         }
         if hosted.isActive {
-            return running.map { $0 == .openaiRealtime ? "$3.50 an hour" : "40¢ an hour" }
+            return running.map { $0.isInstant ? "$3.50 an hour" : "40¢ an hour" }
                 .joined(separator: " + ")
         }
         return running.map(\.costPerHour).joined(separator: " + ")
@@ -349,7 +360,9 @@ final class AppState: ObservableObject {
     private static let labelSpeakersKey = "labelSpeakers"
     private static let expectedSpeakersKey = "expectedSpeakers"
     private static let compareKey = "comparisonMode"
-    private static let comparedKey = "comparedProviders"
+    private static let comparedKey = "comparedProviders"   // pre-1.3, migrated below
+    private static let leftKey = "comparisonLeft"
+    private static let rightKey = "comparisonRight"
     private static let sourceKey = "sourceLanguage"
     private static let lastExplicitSourceKey = "lastExplicitSourceLanguage"
     private static let targetKey = "targetLanguage"
@@ -380,7 +393,20 @@ final class AppState: ObservableObject {
         comparisonMode = defaults.bool(forKey: Self.compareKey)
         let storedCompared = defaults.stringArray(forKey: Self.comparedKey) ?? []
         let restored = Set(storedCompared.compactMap(TranslationProvider.init))
-        comparedProviders = restored.isEmpty ? [.claude, .openaiRealtime] : restored
+        // Comparison used to be a set of providers; it is now a pair of
+        // engines, so a stored set is carried over rather than reset.
+        let legacy = restored.sorted { TranslationProvider.allCases.firstIndex(of: $0)! < TranslationProvider.allCases.firstIndex(of: $1)! }
+        func engine(_ candidate: TranslationProvider) -> ComparisonEngine {
+            switch candidate {
+            case .claude: return .claude(ClaudeModel(rawValue: defaults.string(forKey: Self.modelKey) ?? "") ?? .haiku45)
+            case .openai: return .openai(OpenAITextModel(rawValue: defaults.string(forKey: Self.openAIModelKey) ?? "") ?? .luna)
+            case .openaiRealtime: return .instant
+            }
+        }
+        comparisonLeft = defaults.string(forKey: Self.leftKey).flatMap(ComparisonEngine.init(storageValue:))
+            ?? legacy.first.map(engine) ?? .claude(.haiku45)
+        comparisonRight = defaults.string(forKey: Self.rightKey).flatMap(ComparisonEngine.init(storageValue:))
+            ?? (legacy.count > 1 ? engine(legacy[1]) : .instant)
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
         lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
         targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
@@ -478,34 +504,35 @@ final class AppState: ObservableObject {
 
     /// Which engines this session will run. One normally; several when
     /// comparison mode is on.
-    var activeProviders: [TranslationProvider] {
-        guard comparisonMode, comparedProviders.count >= 2 else { return [provider] }
-        var chosen = TranslationProvider.allCases.filter { comparedProviders.contains($0) }
+    /// What this session will run: one engine normally, two when comparing.
+    var activeEngines: [ComparisonEngine] {
+        guard comparisonMode, comparisonLeft != comparisonRight else { return [currentEngine] }
 
-        // On a hosted account the proxy picks the model, so every local
-        // provider is the same engine. Two local lanes would be the same
-        // thing twice in two colours.
-        if hosted.isActive, chosen.filter(\.usesLocalSpeech).count > 1,
-           let first = chosen.firstIndex(where: \.usesLocalSpeech) {
-            let keep = chosen[first]
-            chosen.removeAll { $0.usesLocalSpeech && $0 != keep }
+        // On a hosted account the proxy picks the model, so two local engines
+        // would be the same thing twice in two colours.
+        if hosted.isActive, !comparisonLeft.isInstant, !comparisonRight.isInstant {
+            return [currentEngine]
         }
-        return chosen.count > 1 ? chosen : [provider]
+        return [comparisonLeft, comparisonRight]
     }
 
+    /// The providers behind those engines, for anything that only cares which
+    /// service is being called.
+    var activeProviders: [TranslationProvider] { activeEngines.map(\.provider) }
+
     func start() {
-        let providers = activeProviders
-        Log.info(.app, "Start requested — \(providers.map(\.shortLabel).joined(separator: " vs ")), "
+        let engines = activeEngines
+        Log.info(.app, "Start requested — \(engines.map(\.shortLabel).joined(separator: " vs ")), "
             + "\(sourceLanguage.displayName) → \(targetLanguage.displayName)")
         errorDetail = nil
         warning = nil
 
         // Every engine needs its key before anything starts, so a missing one
         // fails immediately rather than half-way through a comparison.
-        for candidate in providers where !hosted.isActive && KeychainService.loadAPIKey(for: candidate) == nil {
+        for candidate in engines.map(\.provider) where !hosted.isActive && KeychainService.loadAPIKey(for: candidate) == nil {
             hasAPIKey = provider == candidate ? false : hasAPIKey
             status = .missingAPIKey
-            errorDetail = providers.count > 1
+            errorDetail = engines.count > 1
                 ? "\(candidate.credentialName) needs an API key before it can be compared."
                 : "Add your API key in Settings to start translating."
             Log.error(.app, "No API key for \(candidate.displayName)")
@@ -535,7 +562,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try buildLanes(for: providers)
+            try buildLanes(for: engines)
         } catch let error as EngineError {
             status = .error(error.localizedDescription)
             errorDetail = error.localizedDescription
@@ -547,11 +574,11 @@ final class AppState: ObservableObject {
             return
         }
 
-        SubtitleManager.setComparing(providers.count > 1)
+        SubtitleManager.setComparing(engines.count > 1)
         stats.beginSession()
         transcript.removeAll()
         status = .connecting
-        subtitlePanel.show(streams: lanes.map(\.stream), labelled: providers.count > 1)
+        subtitlePanel.show(streams: lanes.map(\.stream), labelled: engines.count > 1)
 
         // Show where the captions will land before there are any.
         for lane in lanes {
@@ -593,24 +620,28 @@ final class AppState: ObservableObject {
 
     // MARK: - Lanes
 
-    private func buildLanes(for providers: [TranslationProvider]) throws {
+    private func buildLanes(for engines: [ComparisonEngine]) throws {
         teardownLanes()
 
-        let comparing = providers.count > 1
+        let comparing = engines.count > 1
         var built: [Lane] = []
 
-        for (index, candidate) in providers.enumerated() {
-            let stream = SubtitleStream(label: candidate.shortLabel, tintIndex: index)
+        for (index, engine) in engines.enumerated() {
+            // A hosted account runs whatever model the proxy picks, so the
+            // column says Local rather than naming a model it is not using.
+            let label = hosted.isActive ? (engine.isInstant ? "Instant" : "Local") : engine.shortLabel
+            let stream = SubtitleStream(label: label, tintIndex: index)
+            let candidate = engine.provider
 
-            if candidate == .openaiRealtime {
-                let engine = OpenAIRealtimeService(
+            if engine.isInstant {
+                let service = OpenAIRealtimeService(
                     hosted: hosted.isActive ? hosted.token.map { (HostedAccount.realtimeEndpoint, $0) } : nil)
-                try engine.start(source: sourceLanguage, target: targetLanguage)
-                wire(realtime: engine, to: stream, comparing: comparing)
-                built.append(Lane(provider: candidate, stream: stream, realtime: engine))
+                try service.start(source: sourceLanguage, target: targetLanguage)
+                wire(realtime: service, to: stream, comparing: comparing)
+                built.append(Lane(provider: candidate, stream: stream, realtime: service))
             } else {
                 built.append(Lane(provider: candidate, stream: stream,
-                                  translator: try makeTranslator(for: candidate)))
+                                  translator: try makeTranslator(for: engine)))
             }
         }
 
@@ -763,23 +794,23 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func makeTranslator(for candidate: TranslationProvider) throws -> TextTranslating {
+    private func makeTranslator(for engine: ComparisonEngine) throws -> TextTranslating {
         // Hosted Local mode: the API owns the prompt and picks the model.
         if hosted.isActive, let token = hosted.token {
             return HostedTranslator(token: token, source: sourceLanguage, target: targetLanguage)
         }
-        guard let apiKey = KeychainService.loadAPIKey(for: candidate) else {
-            throw EngineError.missingAPIKey(candidate)
+        guard let apiKey = KeychainService.loadAPIKey(for: engine.provider) else {
+            throw EngineError.missingAPIKey(engine.provider)
         }
-        switch candidate {
-        case .claude:
-            return ClaudeTranslator(apiKey: apiKey, model: claudeModel,
+        switch engine {
+        case .claude(let model):
+            return ClaudeTranslator(apiKey: apiKey, model: model,
                                     source: sourceLanguage, target: targetLanguage)
-        case .openai:
-            return OpenAITextTranslator(apiKey: apiKey, model: openAIModel,
+        case .openai(let model):
+            return OpenAITextTranslator(apiKey: apiKey, model: model,
                                         source: sourceLanguage, target: targetLanguage)
-        case .openaiRealtime:
-            throw EngineError.setupFailed("Realtime takes audio directly and has no translator.")
+        case .instant:
+            throw EngineError.setupFailed("Instant mode takes audio directly and has no translator.")
         }
     }
 
@@ -842,7 +873,8 @@ final class AppState: ObservableObject {
         if !policy.allowMicrophone, audioSource == .microphone { audioSource = .systemAudio }
         if !policy.allowInstant {
             if provider == .openaiRealtime { provider = .openai }
-            comparedProviders.remove(.openaiRealtime)
+            if comparisonLeft.isInstant { comparisonLeft = .openai(openAIModel) }
+            if comparisonRight.isInstant { comparisonRight = .openai(openAIModel) }
         }
     }
 

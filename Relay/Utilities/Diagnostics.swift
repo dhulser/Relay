@@ -35,7 +35,7 @@ enum Diagnostics {
             lines.append("Chosen apps open now: \(open.isEmpty ? "none" : open.joined(separator: ", "))")
         }
         lines.append("Engine: \(appState.provider.displayName)"
-                     + (appState.comparisonMode ? " (comparison: \(appState.activeProviders.map(\.shortLabel).joined(separator: ", ")))" : ""))
+                     + (appState.comparisonMode ? " (comparison: \(appState.activeEngines.map(\.shortLabel).joined(separator: " vs ")))" : ""))
         switch appState.provider {
         case .claude: lines.append("Model: \(appState.claudeModel.displayName)")
         case .openai: lines.append("Model: \(appState.openAIModel.displayName)")

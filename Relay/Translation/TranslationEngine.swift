@@ -96,6 +96,77 @@ enum TranslationProvider: String, CaseIterable, Identifiable, Codable {
 
 }
 
+/// One thing a comparison can run: a provider together with the model it
+/// would use. Keyed this way rather than by provider alone so two models from
+/// the same provider can be put side by side, which is the question the mode
+/// most often gets asked — whether a bigger model is worth its latency.
+enum ComparisonEngine: Hashable, Identifiable {
+    case claude(ClaudeModel)
+    case openai(OpenAITextModel)
+    /// Audio straight to OpenAI's translation model; it has no model choice.
+    case instant
+
+    static var all: [ComparisonEngine] {
+        ClaudeModel.allCases.map(Self.claude)
+            + OpenAITextModel.allCases.map(Self.openai)
+            + [.instant]
+    }
+
+    var id: String { storageValue }
+
+    var provider: TranslationProvider {
+        switch self {
+        case .claude: return .claude
+        case .openai: return .openai
+        case .instant: return .openaiRealtime
+        }
+    }
+
+    var isInstant: Bool { self == .instant }
+
+    /// What goes above this engine's column in the overlay.
+    var shortLabel: String {
+        switch self {
+        case .claude(let model): return "Claude · \(model.displayName)"
+        case .openai(let model): return "OpenAI · \(model.displayName)"
+        case .instant: return "Instant"
+        }
+    }
+
+    var characteristic: String { provider.characteristic }
+    var costPerHour: String {
+        switch self {
+        case .claude(let model): return model.costPerHour
+        case .openai(let model): return model.costPerHour
+        case .instant: return "$2.04 an hour"
+        }
+    }
+
+    var storageValue: String {
+        switch self {
+        case .claude(let model): return "claude:\(model.rawValue)"
+        case .openai(let model): return "openai:\(model.rawValue)"
+        case .instant: return "instant"
+        }
+    }
+
+    init?(storageValue: String) {
+        if storageValue == "instant" { self = .instant; return }
+        let parts = storageValue.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "claude":
+            guard let model = ClaudeModel(rawValue: String(parts[1])) else { return nil }
+            self = .claude(model)
+        case "openai":
+            guard let model = OpenAITextModel(rawValue: String(parts[1])) else { return nil }
+            self = .openai(model)
+        default:
+            return nil
+        }
+    }
+}
+
 /// Which recogniser handles the local half of the pipeline.
 enum SpeechEngine: String, CaseIterable, Identifiable, Codable {
     case whisper
@@ -145,6 +216,15 @@ enum OpenAITextModel: String, CaseIterable, Identifiable, Codable {
         case .sol: return "$5/$30 — most capable"
         }
     }
+
+    /// Roughly, for an hour of someone talking.
+    var costPerHour: String {
+        switch self {
+        case .luna: return "about $0.04 an hour"
+        case .terra: return "about $0.40 an hour"
+        case .sol: return "about $1 an hour"
+        }
+    }
 }
 
 /// Claude models for the translation half.
@@ -174,6 +254,16 @@ enum ClaudeModel: String, CaseIterable, Identifiable, Codable {
     /// Sonnet 5 and Opus 5 think by default. A one-sentence translation gains
     /// nothing from it and pays the latency, so it's turned off explicitly.
     var thinkingOnByDefault: Bool { self != .haiku45 }
+
+    /// Roughly, for an hour of someone talking. Scaled from the measured
+    /// Haiku figure by the published price per token.
+    var costPerHour: String {
+        switch self {
+        case .haiku45: return "about $0.19 an hour"
+        case .sonnet5: return "about $0.57 an hour"
+        case .opus5: return "about $0.95 an hour"
+        }
+    }
 }
 
 /// What the user picked for the source language.

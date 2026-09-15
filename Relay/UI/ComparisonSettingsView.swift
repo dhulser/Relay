@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Comparison mode: run two engines on the same audio at once, each in its own
-/// column, and see which one you would rather read.
+/// Comparison mode: put two engines side by side on the same audio and see
+/// which one you would rather read.
 ///
-/// The engine list only appears once the mode is on. Showing it while the mode
-/// is off meant a row could read as "on" when nothing was running, which was
-/// the single most confusing thing about this screen.
+/// Two pickers rather than a list of toggles, because a comparison is always
+/// "this against that" — and because the pair is what decides the two columns,
+/// naming them after the columns makes the screen say what it does.
 struct ComparisonSettingsView: View {
     @EnvironmentObject private var appState: AppState
 
@@ -22,41 +22,43 @@ struct ComparisonSettingsView: View {
             }
 
             if appState.comparisonMode {
-                Section("Engines to compare") {
-                    ForEach(offered) { candidate in
-                        engineRow(candidate)
-                    }
-
-                    if appState.comparedProviders.count < 2 {
-                        Label("Pick two.", systemImage: "exclamationmark.circle.fill")
+                if offered.count < 2 {
+                    Section {
+                        Label("\(appState.hosted.companyName ?? "Your company") has turned Instant mode off, "
+                              + "so there is only one engine to run.",
+                              systemImage: "exclamationmark.circle.fill")
                             .font(.system(size: 11.5))
                             .foregroundStyle(RelayTheme.working)
                     }
-                }
+                } else {
+                    Section("Compare") {
+                        picker(column: 0, selection: $appState.comparisonLeft)
+                        picker(column: 1, selection: $appState.comparisonRight)
 
-                if appState.activeProviders.count > 1 {
-                    Section("While comparing") {
-                        LabeledContent("On screen") {
-                            HStack(spacing: 10) {
-                                ForEach(Array(appState.activeProviders.enumerated()), id: \.element) { index, candidate in
-                                    HStack(spacing: 5) {
-                                        Circle()
-                                            .fill(SubtitleView.colour(at: index))
-                                            .frame(width: 7, height: 7)
-                                        Text(label(for: candidate))
-                                    }
-                                }
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                        LabeledContent("Costs") {
-                            Text(appState.comparisonCostSummary)
-                                .foregroundStyle(appState.hosted.isCompany ? .secondary : RelayTheme.working)
-                        }
-                        if !appState.hosted.isCompany {
-                            Text("Both engines run at once, so a comparison costs both at the same time.")
+                        if appState.comparisonLeft == appState.comparisonRight {
+                            Label("Pick two different engines.", systemImage: "exclamationmark.circle.fill")
                                 .font(.system(size: 11.5))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(RelayTheme.working)
+                        }
+                    }
+
+                    if appState.activeEngines.count > 1 {
+                        Section {
+                            LabeledContent("Costs") {
+                                Text(appState.comparisonCostSummary)
+                                    .foregroundStyle(appState.hosted.isCompany ? .secondary : RelayTheme.working)
+                            }
+                            ForEach(missingKeys, id: \.self) { name in
+                                Label("Needs a \(name) key — add it in Translation",
+                                      systemImage: "exclamationmark.circle.fill")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(RelayTheme.working)
+                            }
+                            if !appState.hosted.isCompany {
+                                Text("Both engines run at once, so a comparison costs both at the same time.")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -65,69 +67,45 @@ struct ComparisonSettingsView: View {
         .formStyle(.grouped)
     }
 
-    /// What can be compared. On a hosted account every local provider is the
-    /// same engine behind the proxy, so only Local and Instant are offered;
-    /// a company that has turned Instant off leaves nothing to compare.
-    private var offered: [TranslationProvider] {
-        guard appState.hosted.isActive else { return TranslationProvider.allCases }
-        var list: [TranslationProvider] = [.openai]
-        if appState.hosted.policy.allowInstant { list.append(.openaiRealtime) }
+    /// One column's engine, labelled with the colour that column will be.
+    private func picker(column: Int, selection: Binding<ComparisonEngine>) -> some View {
+        Picker(selection: selection) {
+            ForEach(offered) { engine in
+                Text(label(for: engine)).tag(engine)
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(SubtitleView.colour(at: column))
+                    .frame(width: 8, height: 8)
+                Text(column == 0 ? "First column" : "Second column")
+            }
+        }
+    }
+
+    /// What can be compared. With your own keys, every model of every
+    /// provider. On a hosted account the proxy decides the model — the
+    /// company's admin chose it — so the choice is Local against Instant.
+    private var offered: [ComparisonEngine] {
+        guard appState.hosted.isActive else { return ComparisonEngine.all }
+        var list: [ComparisonEngine] = [.openai(appState.openAIModel)]
+        if appState.hosted.policy.allowInstant { list.append(.instant) }
         return list
     }
 
-    /// The same words the overlay puts above each column, so the settings and
-    /// the subtitles agree about which engine is which.
-    private func label(for candidate: TranslationProvider) -> String {
-        guard appState.hosted.isActive else { return candidate.shortLabel }
-        return candidate == .openaiRealtime ? "Instant" : "Local"
+    private func label(for engine: ComparisonEngine) -> String {
+        guard appState.hosted.isActive else { return engine.shortLabel }
+        return engine.isInstant ? "Instant" : "Local"
     }
 
-    @ViewBuilder
-    private func engineRow(_ candidate: TranslationProvider) -> some View {
-        let chosen = appState.comparedProviders.contains(candidate)
-
-        VStack(alignment: .leading, spacing: 4) {
-            Toggle(isOn: Binding(
-                get: { chosen },
-                set: { on in
-                    if on { appState.comparedProviders.insert(candidate) }
-                    else { appState.comparedProviders.remove(candidate) }
-                }
-            )) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(label(for: candidate))
-                    Text(candidate.characteristic)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            // Each engine's own settings sit beside it, so a comparison can be
-            // set up without going back to the Translation tab.
-            if chosen, !appState.hosted.isActive {
-                Group {
-                    switch candidate {
-                    case .claude:
-                        Picker("Model", selection: $appState.claudeModel) {
-                            ForEach(ClaudeModel.allCases) { Text($0.displayName).tag($0) }
-                        }
-                    case .openai:
-                        Picker("Model", selection: $appState.openAIModel) {
-                            ForEach(OpenAITextModel.allCases) { Text($0.displayName).tag($0) }
-                        }
-                    case .openaiRealtime:
-                        EmptyView()
-                    }
-
-                    if !KeychainService.hasAPIKey(for: candidate) {
-                        Label("Needs a \(candidate.credentialName) key — add it in Translation",
-                              systemImage: "exclamationmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(RelayTheme.working)
-                    }
-                }
-                .padding(.leading, 20)
-            }
-        }
+    /// Providers in the comparison with no key saved, named once each.
+    private var missingKeys: [String] {
+        guard !appState.hosted.isActive else { return [] }
+        var seen: Set<String> = []
+        return appState.activeEngines
+            .map(\.provider)
+            .filter { !KeychainService.hasAPIKey(for: $0) }
+            .map(\.credentialName)
+            .filter { seen.insert($0).inserted }
     }
 }
