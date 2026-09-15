@@ -87,15 +87,24 @@ struct MenuBarView: View {
     }
 
     private var statusLine: some View {
-        HStack(spacing: 7) {
-            StatusDot(colour: statusColour, pulsing: appState.status == .listening)
-            Text(appState.status.friendlyText)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Spacer()
-            if appState.status == .listening {
-                // A quiet level meter, enough to show it's hearing something.
-                LevelBars(level: levelFraction)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                StatusDot(colour: statusColour, pulsing: appState.status == .listening)
+                Text(appState.status.friendlyText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if appState.status == .listening {
+                    // A quiet level meter, enough to show it's hearing something.
+                    LevelBars(level: levelFraction)
+                }
+            }
+
+            if let account = appState.accountSummary {
+                Text(account)
+                    .font(.system(size: 11))
+                    .foregroundStyle(appState.hosted.isActive ? RelayTheme.accent : Color.secondary.opacity(0.7))
+                    .padding(.leading, 14)
             }
         }
         .padding(.top, 10)

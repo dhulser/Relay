@@ -14,7 +14,7 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
 
             Form {
-                HostedSection(hosted: appState.hosted)
+                AccountSection(hosted: appState.hosted)
                 sourceSection
                 translationSection
                 languagesSection

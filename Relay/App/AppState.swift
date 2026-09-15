@@ -473,6 +473,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Which account is paying, when that is worth saying: once someone has
+    /// a company or hosted sign-in, "whose key is this" becomes a real
+    /// question and the answer belongs where they press start.
+    var accountSummary: String? {
+        guard hosted.isSignedIn || hosted.mode != .personal else { return nil }
+        if hosted.isActive {
+            return hosted.isCompany ? "\(hosted.companyName ?? "Company")'s account" : "Relay Hosted"
+        }
+        return "Your own key"
+    }
+
     /// The chosen apps that are open right now, by name, for the popover.
     var listeningSummary: String? {
         switch audioSource {

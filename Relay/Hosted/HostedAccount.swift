@@ -2,6 +2,26 @@ import AppKit
 import Combine
 import Foundation
 
+/// Which account pays for translation.
+enum AccountMode: String, CaseIterable, Identifiable, Codable {
+    /// Your own provider keys, billed to you by the provider.
+    case personal
+    /// Relay's keys, billed by Relay. Not open yet.
+    case hosted
+    /// Your employer's keys, through their Relay account.
+    case company
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .personal: return "Personal"
+        case .hosted: return "Relay Hosted"
+        case .company: return "Company"
+        }
+    }
+}
+
 /// Relay Hosted: Relay brings the keys, you pay $2 a month plus usage.
 ///
 /// The account is a bearer token minted by the Relay API after a Stripe
@@ -37,9 +57,11 @@ final class HostedAccount: ObservableObject {
 
     /// Whether a token is stored.
     @Published private(set) var isSignedIn: Bool
-    /// The user can keep the account but switch back to their own keys.
-    @Published var enabled: Bool {
-        didSet { defaults.set(enabled, forKey: Self.enabledKey) }
+    /// Which account is in use. Kept even when the matching sign-in is
+    /// missing, so choosing Company and then signing in does the obvious
+    /// thing rather than silently reverting.
+    @Published var mode: AccountMode {
+        didSet { defaults.set(mode.rawValue, forKey: Self.modeKey) }
     }
     @Published private(set) var usage: Usage?
     @Published private(set) var lastError: String?
@@ -90,8 +112,26 @@ final class HostedAccount: ObservableObject {
         }
     }
 
-    /// Hosted mode is in effect: signed in and switched on.
-    var isActive: Bool { isSignedIn && enabled }
+    /// Whether the chosen account is actually running: the mode is not
+    /// personal, and the sign-in it needs is present.
+    var isActive: Bool {
+        switch mode {
+        case .personal: return false
+        case .hosted: return isSignedIn && !isCompany
+        case .company: return isSignedIn && isCompany
+        }
+    }
+
+    /// Why the chosen account is not running, if it is not.
+    var modeProblem: String? {
+        switch mode {
+        case .personal: return nil
+        case .hosted where !HostedAccount.offered:
+            return "Relay Hosted is not open yet. Until it is, use your own key or your company's account."
+        case .hosted: return isSignedIn ? nil : "Sign up for Relay Hosted to use it."
+        case .company: return isSignedIn && isCompany ? nil : "Sign in with your work account to use your company's Relay."
+        }
+    }
 
     /// A company account rather than an individual one. Remembered across
     /// launches so Settings reads right before the first refresh lands.
@@ -157,12 +197,18 @@ final class HostedAccount: ObservableObject {
     }
 
     private let defaults = UserDefaults.standard
-    private static let enabledKey = "hostedEnabled"
+    private static let modeKey = "accountMode"
+    private static let legacyEnabledKey = "hostedEnabled"
     private static let keychainAccount = "relay-hosted-token"
 
     init() {
         isSignedIn = KeychainService.loadSecret(account: Self.keychainAccount) != nil
-        enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        // Before there were three accounts there was one switch; carry it over.
+        let signedIn = KeychainService.loadSecret(account: Self.keychainAccount) != nil
+        let wasEnabled = defaults.object(forKey: Self.legacyEnabledKey) as? Bool ?? true
+        let storedCompany = defaults.string(forKey: Self.companyKey) != nil
+        mode = defaults.string(forKey: Self.modeKey).flatMap(AccountMode.init)
+            ?? (signedIn && wasEnabled ? (storedCompany ? .company : .hosted) : .personal)
         companyName = defaults.string(forKey: Self.companyKey)
         allowsModelChoice = defaults.bool(forKey: Self.modelChoiceKey)
         orgModel = defaults.string(forKey: Self.orgModelKey)
@@ -207,9 +253,10 @@ final class HostedAccount: ObservableObject {
             let usage: Usage = try await Self.call("GET", "/v1/me", token: token)
             KeychainService.saveSecret(token, account: Self.keychainAccount)
             isSignedIn = true
-            enabled = true
             self.usage = usage
             remember(usage)
+            // Signing in is a request to use that account.
+            mode = usage.isCompany ? .company : .hosted
             Log.info(.app, usage.isCompany ? "Signed in to \(usage.org?.name ?? "a company") account" : "Relay Hosted activated (\(usage.status))")
         } catch {
             lastError = error.localizedDescription
@@ -267,6 +314,7 @@ final class HostedAccount: ObservableObject {
         }
         KeychainService.deleteSecret(account: Self.keychainAccount)
         isSignedIn = false
+        mode = .personal
         usage = nil
         freshToken = nil
         companyName = nil

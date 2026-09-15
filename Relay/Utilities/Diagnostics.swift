@@ -41,7 +41,8 @@ enum Diagnostics {
         case .openai: lines.append("Model: \(appState.openAIModel.displayName)")
         case .openaiRealtime: break
         }
-        lines.append("Relay Hosted: \(appState.hosted.isActive ? "on" : appState.hosted.isSignedIn ? "signed in, off" : "not signed in")")
+        lines.append("Account: \(appState.hosted.mode.rawValue)"
+                     + (appState.hosted.isActive ? " (running)" : appState.hosted.isSignedIn ? " (signed in, not in use)" : " (not signed in)"))
         lines.append("Anthropic key stored: \(KeychainService.hasAPIKey(for: .claude) ? "yes" : "no")")
         lines.append("OpenAI key stored: \(KeychainService.hasAPIKey(for: .openai) ? "yes" : "no")")
         lines.append("Speech engine: \(appState.speechEngine.displayName)")
