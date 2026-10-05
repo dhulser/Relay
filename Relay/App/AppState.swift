@@ -327,6 +327,21 @@ final class AppState: ObservableObject {
     }
     private var hotKey: GlobalHotKey?
 
+    #if DEBUG
+    /// docs/spoken-replies.md §11. Debug builds only; gone once the spike has answered.
+    @Published private(set) var voiceSpikeRunning = false
+    private let voiceSpike = VoiceSpike()
+    func toggleVoiceSpike() {
+        if voiceSpike.running {
+            voiceSpike.stop()
+        } else {
+            let audible = UserDefaults.standard.string(forKey: "spikeMonitor") == "audible"
+            voiceSpike.start(monitor: audible ? .audible : .silent)
+        }
+        voiceSpikeRunning = voiceSpike.running
+    }
+    #endif
+
     /// Registered with launchd through SMAppService; macOS owns the truth, so
     /// this reads it back rather than storing its own copy.
     var launchAtLogin: Bool {
@@ -457,6 +472,9 @@ final class AppState: ObservableObject {
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
             + "\(WhisperRuntime.languageCount) languages; "
             + "sherpa-onnx \(SpeakerRuntime.version)")
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "spikeVoice") { toggleVoiceSpike() }
+        #endif
     }
 
     private func attach(_ source: AudioCapturing) {

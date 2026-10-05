@@ -226,6 +226,9 @@ struct MenuBarView: View {
             if !appState.transcript.isEmpty {
                 footerButton("Save transcript") { appState.saveTranscript() }
             }
+            #if DEBUG
+            footerButton(appState.voiceSpikeRunning ? "Stop spike" : "Spike voice") { appState.toggleVoiceSpike() }
+            #endif
             Spacer()
             footerButton("Quit") { NSApplication.shared.terminate(nil) }
         }

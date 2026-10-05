@@ -332,20 +332,35 @@ only one that waits for a whole sentence before anything downstream can start.
 - **Relay quits**: Relay Voice disappears, call apps revert to their default
   mic. Said once in the Settings tab.
 
-## 11. Spike first (half a day)
+## 11. Spike: done, both answers yes (4 Oct 2026)
 
-Before any of the above, a throwaway branch that answers two questions:
+Run on Dylan's Mac (macOS 26, Xcode 27) from the `speak-spike` branch, with
+Zoom, Teams and ChatGPT running.
 
-1. Create a non-private aggregate containing a tap on Relay's own process with
-   `mutedWhenTapped`, play a tone through `AVAudioPlayerNode`, and check: do
-   the speakers stay silent, and does **Relay Voice** appear and carry the tone
-   in Zoom, Google Meet in Chrome and Safari, Microsoft Teams, FaceTime and
-   QuickTime's audio recorder?
-2. Does `kEventHotKeyReleased` arrive reliably for ⌃⌥Space held for 10 s,
-   including when another app is full screen?
+1. **A non-private aggregate device with a tap on Relay's own process works as
+   a virtual microphone.** `Relay Voice` appeared in the system's input list
+   next to Zoom's and Teams' own virtual devices, Zoom listed it and showed
+   level from it, and a separate process (ffmpeg over AVFoundation, the same
+   path Chrome and QuickTime use) recorded the Cedar sample from it cleanly at
+   −24 dB mean / −5 dB peak. With `mutedWhenTapped` the speakers stayed
+   silent. No new permission prompt: it ran on the existing system-audio grant.
+   `kAudioDevicePropertyDeviceIsRunningSomewhere` flipped while the other
+   process was reading and back when it stopped, so the popover can say
+   whether a call app is using the device.
+2. **The hold key reports its release.** ⌃⌥Space through Carbon
+   (`kEventHotKeyReleased`) with Zoom frontmost: two holds, 4.24 s and 8.08 s,
+   each with its release line.
 
-If 1 passes, build A. If it fails on one app, decide whether that app matters
-enough to warrant B. If it fails everywhere, B.
+Two things learned that the design now accounts for:
+
+- **An aggregate device outlives a killed process.** After `pkill`, the old
+  Relay Voice stayed registered under the fixed UID and a second create was
+  refused with `nope`. `RelayVoiceDevice.create` now looks the UID up and
+  destroys a stale device first; a normal quit tears it down.
+- **ChatGPT's launcher is ⌥Space.** Confirmed from its preferences; it does
+  not touch ⌃⌥Space. The first failed test was ⌥Space being pressed instead.
+
+So: build **A**. Option B is dropped.
 
 ## 12. Code shape
 
