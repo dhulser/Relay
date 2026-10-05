@@ -331,6 +331,10 @@ only one that waits for a whole sentence before anything downstream can start.
   switches the output to speakers.
 - **Relay quits**: Relay Voice disappears, call apps revert to their default
   mic. Said once in the Settings tab.
+- **Headphones.** Between translations the real microphone passes through
+  Relay Voice, and with speakers it hears the call's own audio; the call app's
+  echo canceller may or may not cope with the extra 40 ms in the loop. Said in
+  the Settings tab.
 
 ## 11. Spike: done, both answers yes (4 Oct 2026)
 
