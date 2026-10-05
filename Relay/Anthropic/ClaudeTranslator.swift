@@ -31,10 +31,11 @@ final class ClaudeTranslator: TextTranslating {
     /// so `cancel()` can stop all of them rather than only the newest.
     private var inFlight: [Task<Void, Never>] = []
 
-    init(apiKey: String, model: ClaudeModel, source: SourceLanguageSetting, target: Language) {
+    /// `instructions` replaces the subtitle prompt; Speak passes its spoken-output one.
+    init(apiKey: String, model: ClaudeModel, source: SourceLanguageSetting, target: Language, instructions: String? = nil) {
         self.apiKey = apiKey
         self.model = model
-        self.systemPrompt = TranslationPrompt.instructions(source: source, target: target)
+        self.systemPrompt = instructions ?? TranslationPrompt.instructions(source: source, target: target)
 
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30

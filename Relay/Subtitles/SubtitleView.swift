@@ -39,6 +39,10 @@ struct SubtitleView: View {
 
     static func colour(at index: Int) -> Color { palette[index % palette.count] }
 
+    /// Your own lines, spoken through Speak. Outside the speaker palette so
+    /// it can never be confused with someone on the other side.
+    static let youColour = Color(red: 1.00, green: 0.88, blue: 0.55)
+
     init(streams: [SubtitleStream], labelled: Bool = false,
          onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
         self.streams = streams
@@ -94,12 +98,16 @@ private struct SingleStreamView: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
             ForEach(Array(manager.history.enumerated()), id: \.element.id) { index, line in
-                let previous = index > 0 ? manager.history[index - 1].speaker : nil
-                if line.startsNewTurn && line.speaker == nil && index > 0 { turnDivider }
-                label(line.speaker, showing: line.speaker != nil && line.speaker != previous, dimmed: true)
+                let previous = index > 0 ? manager.history[index - 1] : nil
+                if line.startsNewTurn && line.speaker == nil && !line.you && index > 0 { turnDivider }
+                if line.you {
+                    youLabel(dimmed: true)
+                } else {
+                    label(line.speaker, showing: line.speaker != nil && (line.speaker != previous?.speaker || previous?.you == true), dimmed: true)
+                }
                 Text(line.text)
                     .font(mainFont)
-                    .foregroundStyle(tint(line.speaker, dimmed: true))
+                    .foregroundStyle(line.you ? SubtitleView.youColour.opacity(0.55) : tint(line.speaker, dimmed: true))
                 if style.showOriginal, let original = line.original, original != line.text {
                     Text(original)
                         .font(smallFont)
@@ -112,13 +120,17 @@ private struct SingleStreamView: View {
                 if manager.currentStartsNewTurn && manager.currentSpeaker == nil && !manager.history.isEmpty {
                     turnDivider
                 }
-                label(manager.currentSpeaker,
-                      showing: manager.currentSpeaker != nil && manager.currentSpeaker != previous,
-                      dimmed: false)
+                if manager.currentIsYou {
+                    youLabel(dimmed: false)
+                } else {
+                    label(manager.currentSpeaker,
+                          showing: manager.currentSpeaker != nil && manager.currentSpeaker != previous,
+                          dimmed: false)
+                }
                 if !manager.current.isEmpty {
                     Text(manager.current)
                         .font(mainFont)
-                        .foregroundStyle(tint(manager.currentSpeaker, dimmed: false))
+                        .foregroundStyle(manager.currentIsYou ? SubtitleView.youColour : tint(manager.currentSpeaker, dimmed: false))
                 }
                 // The original lands before its translation, so for a moment
                 // it is the only thing to show for this line.
@@ -128,9 +140,28 @@ private struct SingleStreamView: View {
                         .foregroundStyle(.white.opacity(manager.current.isEmpty ? 0.7 : 0.5))
                 }
             }
+
+            if let notice = manager.notice {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(SubtitleView.youColour)
+                        .frame(width: 6, height: 6)
+                    Text(notice)
+                        .font(.system(size: max(11, style.textSize * 0.45), weight: .semibold, design: .rounded))
+                        .foregroundStyle(SubtitleView.youColour.opacity(0.9))
+                }
+                .padding(.top, manager.history.isEmpty && manager.current.isEmpty ? 0 : 6)
+            }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func youLabel(dimmed: Bool) -> some View {
+        Text("You")
+            .font(.system(size: max(11, style.textSize * 0.5), weight: .semibold, design: .rounded))
+            .foregroundStyle(SubtitleView.youColour.opacity(dimmed ? 0.6 : 0.95))
+            .padding(.top, 4)
     }
 
     private var mainFont: Font { .system(size: style.textSize, weight: .medium, design: .rounded) }

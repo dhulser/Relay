@@ -131,9 +131,13 @@ final class SystemAudioCaptureService: AudioCapturing {
         let description: CATapDescription
         switch scope {
         case .everything:
-            // Relay plays no audio of its own, so there is nothing to exclude
-            // and a global tap picks up everything the Mac is playing.
-            description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+            // Speak makes Relay play audio of its own, which must not come
+            // back in as something to subtitle. The process object exists
+            // only once Relay has played something; before that there is
+            // nothing to exclude.
+            let own = RelayVoiceDevice.ownProcessObject().map { [$0] } ?? []
+            if !own.isEmpty { Log.info(.audio, "Excluding Relay's own playback from the tap") }
+            description = CATapDescription(stereoGlobalTapButExcludeProcesses: own)
         case .apps(let pids):
             let objects = Self.audioProcessObjects(belongingTo: pids)
             guard !objects.isEmpty else { throw CaptureError.noChosenAppRunning }

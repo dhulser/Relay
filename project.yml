@@ -40,7 +40,7 @@ targets:
       properties:
         CFBundleIconFile: Relay
         NSAudioCaptureUsageDescription: Relay reads the audio your Mac is playing so it can put translated subtitles on screen.
-        NSMicrophoneUsageDescription: Relay only listens to your microphone when you choose it as the source, to subtitle a conversation in the room.
+        NSMicrophoneUsageDescription: Relay listens to your microphone when you choose it as the source, and while you hold the Speak key so it can translate what you say.
         SUFeedURL: https://github.com/dhulser/Relay/releases/latest/download/appcast.xml
         SUPublicEDKey: cngR4yoPAQbZOXdYFHNfLSV+LqkW0jaazcaOjVwUATc=
         SUEnableInstallerLauncherService: false

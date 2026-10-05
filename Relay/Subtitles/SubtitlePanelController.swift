@@ -173,9 +173,9 @@ final class SubtitlePanelController {
     private func observeContentChanges() {
         for stream in streams {
             stream.manager.$current
-                .combineLatest(stream.manager.$history)
+                .combineLatest(stream.manager.$history, stream.manager.$notice)
                 .receive(on: RunLoop.main)
-                .sink { [weak self] _, _ in self?.updateVisibility() }
+                .sink { [weak self] _, _, _ in self?.updateVisibility() }
                 .store(in: &cancellables)
         }
     }

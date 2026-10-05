@@ -24,6 +24,8 @@ final class SubtitleManager: ObservableObject {
         let origin: String?
         /// What was heard, when the user asked to see it under the line.
         let original: String?
+        /// Spoken by the user through Speak, not heard from the other side.
+        var you = false
     }
 
     /// Finished lines, oldest first.
@@ -44,6 +46,13 @@ final class SubtitleManager: ObservableObject {
     /// What the recogniser heard for the utterance in flight. Arrives before
     /// the translation does, so it is the first thing on screen for a line.
     @Published private(set) var currentOriginal: String?
+
+    /// Whether the in-flight utterance is the user's own, via Speak.
+    @Published private(set) var currentIsYou = false
+
+    /// One line of Speak status under the captions: listening, translating,
+    /// speaking. Not a subtitle; it never enters the history.
+    @Published var notice: String?
 
     /// Shown for a few seconds after Start so the user sees where captions
     /// will appear and that Relay is alive. The first real text replaces it.
@@ -82,7 +91,7 @@ final class SubtitleManager: ObservableObject {
     private var lastFlush = Date.distantPast
     private var idleTimer: Timer?
 
-    var isEmpty: Bool { history.isEmpty && current.isEmpty && currentOriginal == nil && placeholder == nil }
+    var isEmpty: Bool { history.isEmpty && current.isEmpty && currentOriginal == nil && placeholder == nil && notice == nil }
 
     func showPlaceholder(_ text: String, for seconds: TimeInterval = 8) {
         placeholder = text
@@ -101,10 +110,11 @@ final class SubtitleManager: ObservableObject {
     // MARK: - Input
 
     /// A revised guess at the utterance in flight. Coalesced.
-    func updatePartial(_ text: String, speaker: Int? = nil, origin: String? = nil) {
+    func updatePartial(_ text: String, speaker: Int? = nil, origin: String? = nil, you: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         clearPlaceholder()
+        currentIsYou = you
 
         // The first fragment of an utterance marks when speech resumed, which
         // is what the turn gap is measured against.
@@ -122,10 +132,11 @@ final class SubtitleManager: ObservableObject {
     }
 
     /// The source-language text for the utterance in flight.
-    func setOriginal(_ text: String) {
+    func setOriginal(_ text: String, you: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         clearPlaceholder()
+        currentIsYou = you
         if currentStartedAt == nil {
             currentStartedAt = Date()
             currentStartsNewTurn = !history.isEmpty
@@ -138,7 +149,7 @@ final class SubtitleManager: ObservableObject {
     /// A finished utterance. Published immediately — waiting on the debounce
     /// timer would delay the one update that's guaranteed not to change.
     /// `original` falls back to whatever `setOriginal` last received.
-    func complete(_ text: String, speaker: Int? = nil, origin: String? = nil, original: String? = nil) {
+    func complete(_ text: String, speaker: Int? = nil, origin: String? = nil, original: String? = nil, you: Bool = false) {
         cancelPendingFlush()
         clearPlaceholder()
         let heard = original ?? currentOriginal
@@ -152,12 +163,13 @@ final class SubtitleManager: ObservableObject {
         currentSpeaker = nil
         currentOrigin = nil
         currentOriginal = nil
+        currentIsYou = false
         currentStartedAt = nil
         lastCompletedAt = Date()
 
         guard !trimmed.isEmpty else { return }
 
-        history.append(Line(text: trimmed, startsNewTurn: newTurn, speaker: speaker, origin: origin, original: heard))
+        history.append(Line(text: trimmed, startsNewTurn: newTurn, speaker: speaker, origin: origin, original: heard, you: you))
         if history.count > Self.maxHistory {
             history.removeFirst(history.count - Self.maxHistory)
         }
@@ -176,6 +188,7 @@ final class SubtitleManager: ObservableObject {
         currentSpeaker = nil
         currentOrigin = nil
         currentOriginal = nil
+        currentIsYou = false
         currentStartedAt = nil
         lastCompletedAt = .distantPast
     }

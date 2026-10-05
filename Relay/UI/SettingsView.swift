@@ -24,6 +24,9 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .tabItem { Label("Translation", systemImage: "character.bubble") }
 
+            SpeakSettingsView()
+                .tabItem { Label("Speak", systemImage: "person.wave.2") }
+
             ComparisonSettingsView()
                 .tabItem { Label("Comparison", systemImage: "rectangle.split.2x1") }
         }

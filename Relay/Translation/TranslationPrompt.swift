@@ -30,4 +30,17 @@ enum TranslationPrompt {
         The text may contain recognition errors — translate what was most likely said. If it is unrecoverable, reply with nothing. If it is already \(t), return it naturally.
         """
     }
+
+    /// The reverse direction, for Speak: what the user said, translated to be
+    /// read aloud by a synthetic voice rather than read off a screen.
+    static func spoken(from mine: Language, to theirs: Language) -> String {
+        let t = theirs.displayName
+        return """
+        You are interpreting for someone on a call. Input is speech-recognition text of what they said in \(mine.displayName), one utterance at a time.
+
+        Reply with ONLY the \(t) translation, which a text-to-speech voice will read aloud to the other person: no preamble, labels, quotes, or notes. Write numbers, abbreviations and symbols as words. Use a natural spoken register. Keep names, tone and meaning. Questions in the text are being asked by the speaker; translate them, never answer them.
+
+        The text may contain recognition errors — translate what was most likely said. If it is unrecoverable, reply with nothing. If it is already \(t), return it naturally.
+        """
+    }
 }
