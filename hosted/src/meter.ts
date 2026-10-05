@@ -10,6 +10,7 @@ import { estimatedCents, minuteKey, monthKey, type MonthUsage } from "./pricing"
 interface MonthRecord extends MonthUsage {
   lastLocalMinute: number;       // minuteKey of the last billed local minute
   reportedInstantMinutes: number; // whole minutes already sent to Stripe
+  reportedSpeakMinutes?: number;  // likewise for generated speech
 }
 
 interface Pending {
@@ -45,6 +46,10 @@ export class CustomerMeter implements DurableObject {
         const { seconds } = (await request.json()) as { seconds: number };
         return Response.json(await this.recordInstant(seconds));
       }
+      case "POST /speak": {
+        const { seconds } = (await request.json()) as { seconds: number };
+        return Response.json(await this.recordSpeak(seconds));
+      }
       case "GET /allowance":
         return Response.json(await this.allowance());
       case "GET /usage":
@@ -59,7 +64,7 @@ export class CustomerMeter implements DurableObject {
   private async month(): Promise<MonthRecord> {
     const key = `usage:${monthKey()}`;
     return (await this.state.storage.get<MonthRecord>(key))
-      ?? { localMinutes: 0, instantSeconds: 0, lastLocalMinute: 0, reportedInstantMinutes: 0 };
+      ?? { localMinutes: 0, instantSeconds: 0, speakSeconds: 0, lastLocalMinute: 0, reportedInstantMinutes: 0, reportedSpeakMinutes: 0 };
   }
 
   private async save(record: MonthRecord): Promise<void> {
@@ -91,6 +96,7 @@ export class CustomerMeter implements DurableObject {
       month: monthKey(),
       localMinutes: record.localMinutes,
       instantSeconds: record.instantSeconds,
+      speakSeconds: record.speakSeconds ?? 0,
       estimatedCents: estimatedCents(record),
       capCents: this.capCents(),
     };
@@ -130,6 +136,25 @@ export class CustomerMeter implements DurableObject {
       record.reportedInstantMinutes = wholeMinutes;
       await this.save(record);
       await this.report(this.env.STRIPE_METER_INSTANT, unreported, `${this.customerId}-instant-${monthKey()}-${wholeMinutes}`);
+    } else {
+      await this.save(record);
+    }
+    return this.allowance(record);
+  }
+
+  /** Seconds of speech generated for Speak. Whole minutes go to Stripe. */
+  private async recordSpeak(seconds: number): Promise<Allowance> {
+    const record = await this.month();
+    record.speakSeconds = (record.speakSeconds ?? 0) + Math.max(0, Math.ceil(seconds));
+
+    const wholeMinutes = Math.floor(record.speakSeconds / 60);
+    const unreported = wholeMinutes - (record.reportedSpeakMinutes ?? 0);
+    if (unreported > 0) {
+      record.reportedSpeakMinutes = wholeMinutes;
+      await this.save(record);
+      if (this.env.STRIPE_METER_SPEAK) {
+        await this.report(this.env.STRIPE_METER_SPEAK, unreported, `${this.customerId}-speak-${monthKey()}-${wholeMinutes}`);
+      }
     } else {
       await this.save(record);
     }
@@ -189,6 +214,7 @@ export function meterFor(env: Env, customerId: string) {
   return {
     local: () => call<Allowance>("POST", "local"),
     instant: (seconds: number) => call<Allowance>("POST", "instant", { seconds }),
+    speak: (seconds: number) => call<Allowance>("POST", "speak", { seconds }),
     allowance: () => call<Allowance>("GET", "allowance"),
     usage: () => call<MonthUsage & { month: string; estimatedCents: number; capCents: number }>("GET", "usage"),
   };

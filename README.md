@@ -38,6 +38,10 @@ the language you pick.
   meeting that switches between two is fine.
 - **Tells voices apart.** Optional speaker labels colour each line by who said
   it. It knows two voices differ, not who anyone is.
+- **Speaks for you.** Hold a key, say something in your language, and the
+  other person hears it in theirs: through this Mac's speakers for someone in
+  the room, or through a virtual microphone called Relay Voice that you pick
+  in Zoom, Meet or Teams. Two natural voices, Nova and Cedar.
 - **Shows the original** under each line if you want it.
 - **Listens where you point it:** everything on the Mac, only the apps you
   choose, or the microphone for a conversation in the room.

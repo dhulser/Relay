@@ -64,7 +64,7 @@ Rendered by the Worker, signed into with the same SSO. Deliberately small.
 2. **Choose the mode**: paste a provider key (encrypted at rest, never shown
    again, rotate by pasting a new one) or buy credits.
 3. **Policy**: allow Instant mode; allow transcripts; allow the microphone
-   source; allowed target languages. Enforced on the server and reflected in
+   source; allow Speak; allowed target languages. Enforced on the server and reflected in
    the app, which hides what the policy forbids.
 4. **Limits**: per-member monthly cap, org monthly cap, seat limit.
 5. **People**: everyone who has signed in, last seen, this month's minutes,

@@ -11,6 +11,11 @@ describe("pricing", () => {
     expect(estimatedCents({ localMinutes: 0, instantSeconds: 3600 })).toBe(550);
   });
 
+  it("charges an hour of generated speech at $1.50", () => {
+    expect(estimatedCents({ localMinutes: 0, instantSeconds: 0, speakSeconds: 3600 })).toBe(350);
+    expect(STRIPE_UNIT_AMOUNT_DECIMAL.speak).toBe("2.5000");
+  });
+
   it("rounds a fraction of a cent up, never down", () => {
     expect(estimatedCents({ localMinutes: 1, instantSeconds: 0 })).toBe(201);
   });

@@ -13,6 +13,7 @@ Live at `https://api.relay-9cf.workers.dev`.
 Relay.app ──POST /v1/translate {text,target}──▶ Worker ──▶ OpenAI chat completions (Luna)
           ◀──── OpenAI's SSE stream, unchanged ─┘
 Relay.app ──WS  /v1/realtime?target=en ────────▶ Worker ──WS──▶ OpenAI Realtime translations
+Relay.app ──POST /v1/speak {text,voice} ───────▶ Worker ──▶ OpenAI speech (raw PCM streamed back)
                                                    │
                                         CustomerMeter (Durable Object)
                                         minutes → Stripe meter events
@@ -23,6 +24,9 @@ Relay.app ──WS  /v1/realtime?target=en ────────▶ Worker �
   model, so the proxy cannot be used as a general model.
 - **Instant mode** bills the minutes the socket is open. The Worker settles
   every 60 s and closes the socket the minute the cap is reached (code 4402).
+- **Speak** bills the seconds of speech generated, counted as the audio
+  streams back, at $1.50 an hour for hosted customers and at cost for a company
+  on its own key. The voice model is fixed server-side.
 - **The cap** (`MONTHLY_CAP_CENTS`, $50) includes the $2 base. Over it, both
   endpoints return 402 with a plain-language reason the app shows.
 - **Accounts** are Stripe customers. Checkout success mints a bearer token
@@ -87,6 +91,7 @@ npx wrangler d1 execute relay --remote --command "SELECT id, status, created_at 
 | `POST /webhooks/stripe` | signature | keeps subscription status current |
 | `POST /v1/translate` | bearer | one utterance → SSE |
 | `GET /v1/realtime` | bearer | WebSocket proxy |
+| `POST /v1/speak` | bearer | one sentence → 24 kHz PCM, metered per generated second |
 | `GET /v1/me` | bearer | status and this month's usage |
 | `POST /v1/portal` | bearer | Stripe billing portal link |
 | `POST /v1/tokens` | bearer | a token for another Mac |

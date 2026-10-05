@@ -10,6 +10,8 @@ export interface Policy {
   allowInstant: boolean;
   allowTranscript: boolean;
   allowMicrophone: boolean;
+  /// Speak: talking back through a synthetic voice on the company's key.
+  allowSpeak: boolean;
 }
 
 export interface Org {
@@ -34,7 +36,7 @@ interface OrgRow {
 }
 
 export function parsePolicy(json: string | null | undefined): Policy {
-  const defaults: Policy = { allowInstant: true, allowTranscript: true, allowMicrophone: true };
+  const defaults: Policy = { allowInstant: true, allowTranscript: true, allowMicrophone: true, allowSpeak: true };
   if (!json) return defaults;
   try {
     const parsed = JSON.parse(json) as Partial<Policy>;
@@ -42,6 +44,7 @@ export function parsePolicy(json: string | null | undefined): Policy {
       allowInstant: parsed.allowInstant !== false,
       allowTranscript: parsed.allowTranscript !== false,
       allowMicrophone: parsed.allowMicrophone !== false,
+      allowSpeak: parsed.allowSpeak !== false,
     };
   } catch {
     return defaults;
