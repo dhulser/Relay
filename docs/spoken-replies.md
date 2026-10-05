@@ -387,9 +387,16 @@ a character meter.
 
 ## 13. Phases
 
-1. **Spike** (section 11).
+1. **Spike** (section 11). Done 4 Oct.
 2. **In the room**: hold key, Whisper, reverse lane, OpenAI voice with Apple fallback, speakers,
-   HUD, the You line. Ships on its own as "Speak for me in the room".
+   HUD, the You line. Ships on its own as "Speak for me in the room". **Built 4 Oct**
+   (`Relay/Speak/`, the Speak tab, `SpokenReplyController`). Verified end to end with
+   a Debug self-test (`-speakSelfTest file.aiff`): a 6.7 s English sentence recognised in
+   0.3 s, translated to Spanish, spoken by Cedar with first audio 1.2 s after the
+   translation on a cold connection. Two findings: Speak loads its own Whisper
+   context (a second ~500 MB on the GPU; sharing one is a later optimisation), and
+   the incoming side is muted while Relay speaks on *every* source, because the
+   system tap hears the speakers too.
 3. **On a call**: Relay Voice, pass-through, popover status,
    Settings tab complete. This is the feature as you described it.
 4. **Latency**: inference during the hold, streaming sentence split, parallel
@@ -398,9 +405,10 @@ a character meter.
 
 ## 14. Privacy
 
-- The microphone is captured only while the key is held and, if pass-through
-  is on, copied buffer-to-buffer inside Relay while Speak is enabled. Nothing
-  from pass-through is transcribed, stored or transmitted.
+- The microphone is opened for the session when Speak is on, but its audio
+  is looked at only while the key is held (every other buffer is dropped on
+  arrival). With pass-through on, buffers are copied to the output inside
+  Relay and nothing from them is transcribed, stored or transmitted.
 - Recognition is local, as today. The translated text goes to the translation
   provider as today, and, with the OpenAI or own-voice engines, to the speech
   provider. With the Apple voice no audio or speech text leaves the Mac.

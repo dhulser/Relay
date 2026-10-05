@@ -42,7 +42,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Dylan Hulser</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Relay only listens to your microphone when you choose it as the source, to subtitle a conversation in the room.</string>
+	<string>Relay listens to your microphone when you choose it as the source, and while you hold the Speak key so it can translate what you say.</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<false/>
 	<key>SUFeedURL</key>

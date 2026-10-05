@@ -7,6 +7,8 @@ struct TranscriptEntry: Identifiable, Equatable {
     let speaker: Int?
     let original: String?
     let translation: String
+    /// Said by the user through Speak; `translation` is what the other side heard.
+    var you = false
 }
 
 /// Plain-text rendering of a transcript. Deliberately simple: timestamps,
@@ -19,7 +21,7 @@ enum Transcript {
 
         var lines: [String] = []
         for entry in entries {
-            let who = entry.speaker.map { "Speaker \($0): " } ?? ""
+            let who = entry.you ? "You: " : (entry.speaker.map { "Speaker \($0): " } ?? "")
             lines.append("[\(clock.string(from: entry.time))] \(who)\(entry.translation)")
             if let original = entry.original, !original.isEmpty, original != entry.translation {
                 lines.append("    \(original)")

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import Foundation
 import ServiceManagement
@@ -327,6 +328,30 @@ final class AppState: ObservableObject {
     }
     private var hotKey: GlobalHotKey?
 
+    // MARK: - Speak
+
+    /// Hold a key, talk, and the other person hears it in their language.
+    @Published var speakEnabled: Bool {
+        didSet { defaults.set(speakEnabled, forKey: Self.speakEnabledKey) }
+    }
+    @Published var speakVoice: SpeakVoice {
+        didSet { defaults.set(speakVoice.rawValue, forKey: Self.speakVoiceKey) }
+    }
+    /// Their language, when there is nothing to detect it from yet.
+    @Published var speakTo: SourceLanguageSetting {
+        didSet { defaults.set(speakTo.storageValue, forKey: Self.speakToKey) }
+    }
+    /// Tap to start and tap to stop, instead of holding.
+    @Published var speakToggleMode: Bool {
+        didSet { defaults.set(speakToggleMode, forKey: Self.speakToggleKey) }
+    }
+    let speak = SpokenReplyController()
+    private var speakHoldKey: GlobalHotKey?
+    /// The language of the last incoming line, which is what Speak replies in
+    /// when the source is auto-detected.
+    private var lastHeardLanguage: Language?
+    static let speakKeyDescription = "⌃⌥Space"
+
     #if DEBUG
     /// docs/spoken-replies.md §11. Debug builds only; gone once the spike has answered.
     @Published private(set) var voiceSpikeRunning = false
@@ -367,6 +392,10 @@ final class AppState: ObservableObject {
     private static let chosenAppsKey = "chosenAppBundleIDs"
     private static let voiceFilterKey = "voiceActivityFilter"
     private static let shortcutKey = "globalShortcut"
+    private static let speakEnabledKey = "speakEnabled"
+    private static let speakVoiceKey = "speakVoice"
+    private static let speakToKey = "speakTo"
+    private static let speakToggleKey = "speakToggleMode"
     private static let providerKey = "translationProvider"
     private static let modelKey = "claudeModel"
     private static let openAIModelKey = "openAIModel"
@@ -398,6 +427,10 @@ final class AppState: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        speakEnabled = defaults.bool(forKey: Self.speakEnabledKey)
+        speakVoice = SpeakVoice(rawValue: defaults.string(forKey: Self.speakVoiceKey) ?? "") ?? .nova
+        speakTo = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.speakToKey) ?? "auto")
+        speakToggleMode = defaults.bool(forKey: Self.speakToggleKey)
         provider = defaults.string(forKey: Self.providerKey).flatMap(TranslationProvider.init) ?? .claude
         claudeModel = defaults.string(forKey: Self.modelKey).flatMap(ClaudeModel.init) ?? .haiku45
         openAIModel = defaults.string(forKey: Self.openAIModelKey).flatMap(OpenAITextModel.init) ?? .luna
@@ -423,8 +456,8 @@ final class AppState: ObservableObject {
         comparisonRight = defaults.string(forKey: Self.rightKey).flatMap(ComparisonEngine.init(storageValue:))
             ?? (legacy.count > 1 ? engine(legacy[1]) : .instant)
         sourceLanguage = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.sourceKey) ?? "auto")
-        lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init) ?? .spanish
-        targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init) ?? .english
+        lastExplicitSource = defaults.string(forKey: Self.lastExplicitSourceKey).flatMap(Language.init(rawValue:)) ?? .spanish
+        targetLanguage = defaults.string(forKey: Self.targetKey).flatMap(Language.init(rawValue:)) ?? .english
         keepTranscript = defaults.bool(forKey: Self.keepTranscriptKey)
         shortcutEnabled = defaults.object(forKey: Self.shortcutKey) as? Bool ?? true
         audioSource = defaults.string(forKey: Self.audioSourceKey).flatMap(AudioSource.init) ?? .systemAudio
@@ -474,6 +507,23 @@ final class AppState: ObservableObject {
             + "sherpa-onnx \(SpeakerRuntime.version)")
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "spikeVoice") { toggleVoiceSpike() }
+        // -speakSelfTest /path/to/english.aiff: start a session, then run that
+        // file through Speak as if it had been said with the key held.
+        if let path = UserDefaults.standard.string(forKey: "speakSelfTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.start() }
+            speak.$ready.filter { $0 }.first()
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        self?.speak.selfTest(file: URL(fileURLWithPath: path))
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { self?.stop() }
+                    // Whisper frees its Metal state on its own queue; exiting
+                    // under it trips a ggml assertion.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 33) { NSApp.terminate(nil) }
+                }
+                .store(in: &cancellables)
+        }
         #endif
     }
 
@@ -484,8 +534,16 @@ final class AppState: ObservableObject {
         source.onError = { [weak self] error in
             MainActor.assumeIsolated { self?.fail(with: error.localizedDescription, kind: error) }
         }
+        // When the session is already on the microphone, Speak shares it: held
+        // key, the buffers are yours. And whatever the source, while Relay is
+        // talking the Mac is hearing Relay, through the room or through the
+        // system mix, and must not subtitle itself.
+        let sharesMicrophone = audioSource == .microphone
+        let gate = speak.gate
         source.onAudioBuffer = { [weak self] buffer in
             guard let self else { return }
+            if sharesMicrophone, gate.isHolding { self.speak.receive(buffer); return }
+            if gate.mutesIncoming { return }
             self.sharedTranscriber?.receive(buffer)
             for lane in self.lanes { lane.realtime?.receive(buffer) }
         }
@@ -624,6 +682,8 @@ final class AppState: ObservableObject {
                 fail(with: error.localizedDescription, kind: error)
             }
         }
+
+        if speakEnabled, let stream = lanes.first?.stream { startSpeak(stream: stream) }
     }
 
     func stop() {
@@ -632,6 +692,7 @@ final class AppState: ObservableObject {
         warning = nil
         audioLevel = 0
         stats.endSession()
+        stopSpeak()
         teardownLanes()
         subtitlePanel.hide()
         stopCapture()
@@ -722,6 +783,7 @@ final class AppState: ObservableObject {
     /// Hands one recognised utterance to every local translator at once.
     private func distribute(_ result: TranscriptionResult) {
         stats.record(language: result.languageCode)
+        if let code = result.languageCode, let heard = Language(isoCode: code) { lastHeardLanguage = heard }
         let showOriginal = SubtitleStyle.shared.showOriginal
         for index in lanes.indices where lanes[index].translator != nil {
             lanes[index].pending.append((result.speaker, result.languageCode, result.text))
@@ -830,7 +892,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func makeTranslator(for engine: ComparisonEngine) throws -> TextTranslating {
+    /// `source`, `target` and `instructions` default to the session's; Speak
+    /// passes the reverse direction and its spoken-output prompt.
+    private func makeTranslator(for engine: ComparisonEngine, source: SourceLanguageSetting? = nil,
+                                target: Language? = nil, instructions: String? = nil) throws -> TextTranslating {
+        let source = source ?? sourceLanguage
+        let target = target ?? targetLanguage
         // Hosted Local mode: the API owns the prompt and picks the model.
         if hosted.isActive, let token = hosted.token {
             // Name the model only when the company allows members to choose;
@@ -841,19 +908,18 @@ final class AppState: ObservableObject {
             case .openai(let model): chosen = hosted.allowsModelChoice ? model.rawValue : nil
             case .instant: chosen = nil
             }
-            return HostedTranslator(token: token, source: sourceLanguage,
-                                    target: targetLanguage, model: chosen)
+            return HostedTranslator(token: token, source: source, target: target, model: chosen)
         }
         guard let apiKey = KeychainService.loadAPIKey(for: engine.provider) else {
             throw EngineError.missingAPIKey(engine.provider)
         }
         switch engine {
         case .claude(let model):
-            return ClaudeTranslator(apiKey: apiKey, model: model,
-                                    source: sourceLanguage, target: targetLanguage)
+            return ClaudeTranslator(apiKey: apiKey, model: model, source: source, target: target,
+                                    instructions: instructions)
         case .openai(let model):
-            return OpenAITextTranslator(apiKey: apiKey, model: model,
-                                        source: sourceLanguage, target: targetLanguage)
+            return OpenAITextTranslator(apiKey: apiKey, model: model, source: source, target: target,
+                                        instructions: instructions)
         case .instant:
             throw EngineError.setupFailed("Instant mode takes audio directly and has no translator.")
         }
@@ -927,6 +993,82 @@ final class AppState: ObservableObject {
             if comparisonLeft.isInstant { comparisonLeft = .openai(openAIModel) }
             if comparisonRight.isInstant { comparisonRight = .openai(openAIModel) }
         }
+    }
+
+    // MARK: - Speak session
+
+    private func startSpeak(stream: SubtitleStream) {
+        let store = ModelStore.whisper
+        guard store.isInstalled(whisperModel) else {
+            warning = "Speak needs the Whisper speech model. Open Settings to download it."
+            return
+        }
+        // Its own recogniser, fixed to your language, with the room's noise
+        // floor tracked the way the microphone source does.
+        let transcriber = WhisperTranscriptionService(
+            model: whisperModel, modelURL: store.url(for: whisperModel), adaptiveSilence: true)
+
+        let apple = AppleSpeechSynthesizer(preference: speakVoice)
+        // Your own OpenAI key even on a hosted account: the hosted tier has no
+        // speech route yet (docs/spoken-replies.md §13, phase 5).
+        let openAIKey = KeychainService.loadAPIKey(for: .openai)
+        let synthesizer: SpeechSynthesizing = openAIKey.map { OpenAISpeechSynthesizer(apiKey: $0, voice: speakVoice) } ?? apple
+        if openAIKey == nil {
+            warning = "Speak is using the Mac's built-in voice. Add an OpenAI key in Settings for the natural ones."
+        }
+
+        let setup = SpokenReplyController.Setup(
+            myLanguage: targetLanguage,
+            theirLanguage: { [weak self] in
+                guard let self else { return nil }
+                return self.speakTo.language ?? self.sourceLanguage.language ?? self.lastHeardLanguage
+            },
+            transcriber: transcriber,
+            makeTranslator: { [weak self] from, to in
+                guard let self else { throw EngineError.setupFailed("Relay stopped.") }
+                return try self.makeTranslator(for: self.currentEngine, source: .explicit(from), target: to,
+                                               instructions: TranslationPrompt.spoken(from: from, to: to))
+            },
+            synthesizer: synthesizer,
+            fallback: openAIKey == nil ? nil : apple,
+            ownMicrophone: audioSource != .microphone,
+            stream: stream)
+
+        speak.onLine = { [weak self] said, translation, language in
+            guard let self else { return }
+            self.stats.record(line: translation, language: language.isoCode)
+            if self.keepTranscript {
+                self.transcript.append(TranscriptEntry(time: Date(), speaker: nil, original: said,
+                                                       translation: translation, you: true))
+            }
+        }
+        speak.onWarning = { [weak self] message in self?.warning = message }
+
+        speakHoldKey = GlobalHotKey(
+            keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey),
+            onPress: { [weak self] in
+                guard let self else { return }
+                self.speakToggleMode ? self.speak.toggleHold() : self.speak.beginHold()
+            },
+            onRelease: { [weak self] in
+                guard let self, !self.speakToggleMode else { return }
+                self.speak.endHold()
+            })
+
+        Task {
+            do {
+                try await speak.start(setup)
+            } catch {
+                let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                self.warning = "Speak couldn't start. \(detail)"
+                Log.error(.speak, "Speak couldn't start: \(detail)")
+            }
+        }
+    }
+
+    private func stopSpeak() {
+        speakHoldKey = nil
+        speak.stop()
     }
 
     // MARK: - Transcript

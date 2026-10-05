@@ -12,6 +12,9 @@ struct MenuBarView: View {
             Spacer().frame(height: 16)
             startButton
             statusLine
+            if appState.speakEnabled && appState.status.isRunning {
+                SpeakRow(speak: appState.speak)
+            }
             notice
             tally
             Divider().padding(.vertical, 12)
@@ -283,5 +286,42 @@ private struct LevelBars: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: level)
+    }
+}
+
+
+/// Hold-to-talk with the mouse, and a reminder of the key. Its own view so
+/// the controller's phase changes redraw it.
+private struct SpeakRow: View {
+    @ObservedObject var speak: SpokenReplyController
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(speak.phase == .listening ? SubtitleView.youColour : Color.secondary.opacity(0.15)))
+                .foregroundStyle(speak.phase == .listening ? .black : .primary)
+                .opacity(speak.ready ? 1 : 0.5)
+                .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+                    if pressing { speak.beginHold() } else { speak.endHold() }
+                }, perform: {})
+            Text("or hold \(AppState.speakKeyDescription)")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.top, 10)
+    }
+
+    private var title: String {
+        guard speak.ready else { return "Getting ready…" }
+        switch speak.phase {
+        case .idle: return "Hold to talk"
+        case .listening: return "Listening…"
+        case .working: return "Translating…"
+        case .speaking: return "Speaking…"
+        }
     }
 }

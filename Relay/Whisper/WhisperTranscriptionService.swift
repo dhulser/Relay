@@ -165,8 +165,10 @@ final class WhisperTranscriptionService: SpeechTranscribing {
         Log.info(.whisper, "Loaded \(model.displayName) model, \(mode)\(filter)")
     }
 
-    func stop() async {
-        // Flush whatever is mid-phrase so the last line isn't lost.
+    /// Transcribes whatever is mid-phrase right now instead of waiting for a
+    /// pause: the end of a push-to-talk hold, or the end of the session.
+    /// Anything shorter than `minimumPhrase` was a tap, not speech.
+    func flush() {
         let remainder: [Float] = lock.withLock {
             defer {
                 phrase.removeAll(keepingCapacity: true)
@@ -176,6 +178,11 @@ final class WhisperTranscriptionService: SpeechTranscribing {
             return phrase.count >= Self.minimumPhrase ? phrase : []
         }
         if !remainder.isEmpty { transcribe(remainder) }
+    }
+
+    func stop() async {
+        // Flush whatever is mid-phrase so the last line isn't lost.
+        flush()
 
         // The drain loop runs every queued phrase on this queue before this
         // block is reached, so nothing is mid-inference when the model goes.
