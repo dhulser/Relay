@@ -48,6 +48,9 @@ final class HostedAccount: ObservableObject {
     }()
 
     private static let productionBase = "https://api.relay-9cf.workers.dev"
+    /// Speak's voice, on the account's key; raw PCM streamed back.
+    nonisolated static var speakEndpoint: URL { baseURL.appendingPathComponent("/v1/speak") }
+
     /// The Instant-mode proxy; same host, WebSocket.
     static var realtimeEndpoint: URL {
         var parts = URLComponents(url: baseURL.appendingPathComponent("/v1/realtime"), resolvingAgainstBaseURL: false)!
@@ -85,7 +88,27 @@ final class HostedAccount: ObservableObject {
             let allowInstant: Bool
             let allowTranscript: Bool
             let allowMicrophone: Bool
-            static let everything = Policy(allowInstant: true, allowTranscript: true, allowMicrophone: true)
+            /// Talking back through a synthetic voice. Servers from before
+            /// Speak existed do not send it; absent means allowed.
+            let allowSpeak: Bool
+            static let everything = Policy(allowInstant: true, allowTranscript: true, allowMicrophone: true, allowSpeak: true)
+
+            init(allowInstant: Bool, allowTranscript: Bool, allowMicrophone: Bool, allowSpeak: Bool) {
+                self.allowInstant = allowInstant
+                self.allowTranscript = allowTranscript
+                self.allowMicrophone = allowMicrophone
+                self.allowSpeak = allowSpeak
+            }
+
+            private enum CodingKeys: String, CodingKey { case allowInstant, allowTranscript, allowMicrophone, allowSpeak }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                allowInstant = try c.decodeIfPresent(Bool.self, forKey: .allowInstant) ?? true
+                allowTranscript = try c.decodeIfPresent(Bool.self, forKey: .allowTranscript) ?? true
+                allowMicrophone = try c.decodeIfPresent(Bool.self, forKey: .allowMicrophone) ?? true
+                allowSpeak = try c.decodeIfPresent(Bool.self, forKey: .allowSpeak) ?? true
+            }
         }
 
         /// "customer" (individual, Stripe) or "member" (a company account).
@@ -99,12 +122,15 @@ final class HostedAccount: ObservableObject {
         let month: String
         let localMinutes: Int
         let instantSeconds: Int
+        /// Seconds of speech generated for Speak. Older servers omit it.
+        let speakSeconds: Int?
         let estimatedCents: Int
         let capCents: Int
 
         var isCompany: Bool { kind == "member" }
 
         var instantMinutes: Int { instantSeconds / 60 }
+        var speakMinutes: Int { (speakSeconds ?? 0) / 60 }
         var estimatedText: String { Self.dollars(estimatedCents) }
         var capText: String { Self.dollars(capCents) }
         static func dollars(_ cents: Int) -> String {
@@ -191,7 +217,7 @@ final class HostedAccount: ObservableObject {
         if usage.org?.hasOpenAI == true { providers.formUnion([.openai, .openaiRealtime]) }
         if usage.org?.hasAnthropic == true { providers.insert(.claude) }
         orgProviders = providers.isEmpty ? [.openai, .openaiRealtime] : providers
-        if let data = try? JSONEncoder().encode(["allowInstant": policy.allowInstant, "allowTranscript": policy.allowTranscript, "allowMicrophone": policy.allowMicrophone]) {
+        if let data = try? JSONEncoder().encode(["allowInstant": policy.allowInstant, "allowTranscript": policy.allowTranscript, "allowMicrophone": policy.allowMicrophone, "allowSpeak": policy.allowSpeak]) {
             defaults.set(data, forKey: Self.policyKey)
         }
     }
@@ -216,7 +242,8 @@ final class HostedAccount: ObservableObject {
            let flags = try? JSONDecoder().decode([String: Bool].self, from: data) {
             policy = Usage.Policy(allowInstant: flags["allowInstant"] ?? true,
                                   allowTranscript: flags["allowTranscript"] ?? true,
-                                  allowMicrophone: flags["allowMicrophone"] ?? true)
+                                  allowMicrophone: flags["allowMicrophone"] ?? true,
+                                  allowSpeak: flags["allowSpeak"] ?? true)
         }
     }
 

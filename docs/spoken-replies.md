@@ -415,7 +415,16 @@ a character meter.
    key sends, a hold replaces, the popover has Say it / Drop it.
 4. **Latency**: inference during the hold, streaming sentence split, parallel
    synthesis.
-5. **Hosted** `/v1/speak`, bare-key option, your own voice.
+5. **Hosted** `/v1/speak`, bare-key option, your own voice. **The hosted route
+   is built, 5 Oct**: `POST /v1/speak {text, voice}` on the Worker runs the
+   account's OpenAI key (a company's own, or Relay's for individuals), fixes
+   the model server-side, streams the PCM back unchanged, and meters the
+   seconds of audio actually returned, at cost for a company and $1.50 an
+   hour for hosted customers, under the same monthly limits. Companies get an
+   "Allow Speak" policy switch in the admin console and `speak_seconds` in the
+   usage CSV (migration 0005). The app uses the account's voice whenever a
+   hosted or company account is active and the personal key otherwise. Bare
+   keys and own-voice engines remain.
 
 ## 14. Privacy
 

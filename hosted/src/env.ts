@@ -12,6 +12,8 @@ export interface Env {
   STRIPE_PRICE_INSTANT: string;
   STRIPE_METER_LOCAL: string;
   STRIPE_METER_INSTANT: string;
+  STRIPE_METER_SPEAK: string;
+  OPENAI_SPEECH_MODEL: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   OPENAI_API_KEY: string;

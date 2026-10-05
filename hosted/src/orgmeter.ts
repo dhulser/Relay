@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import { INSTANT_CENTS_PER_MINUTE, LOCAL_CENTS_PER_MINUTE, minuteKey, monthKey } from "./pricing";
+import { INSTANT_CENTS_PER_MINUTE, LOCAL_CENTS_PER_MINUTE, SPEAK_COST_CENTS_PER_MINUTE, minuteKey, monthKey } from "./pricing";
 
 // One Durable Object per org, holding this month's counters for every member.
 // The org cap and each member's cap are checked in the same place that
@@ -13,6 +13,9 @@ interface MemberCounters {
   localCents?: number;
   instantSeconds: number;
   lastLocalMinute: number;
+  /// Speak: seconds of speech generated, and what it cost.
+  speakSeconds?: number;
+  speakCents?: number;
 }
 interface MonthRecord { members: Record<string, MemberCounters> }
 
@@ -32,7 +35,7 @@ function cents(c: MemberCounters): number {
   // Counters written before the meter knew about models carry no localCents;
   // fall back to the flat rate for those.
   const local = c.localCents ?? c.localMinutes * LOCAL_CENTS_PER_MINUTE;
-  return Math.ceil(local + (c.instantSeconds / 60) * INSTANT_CENTS_PER_MINUTE);
+  return Math.ceil(local + (c.instantSeconds / 60) * INSTANT_CENTS_PER_MINUTE + (c.speakCents ?? 0));
 }
 
 export class OrgMeter implements DurableObject {
@@ -53,13 +56,15 @@ export class OrgMeter implements DurableObject {
         return Response.json(await this.recordLocal(body!.member, body!, body!.centsPerMinute ?? LOCAL_CENTS_PER_MINUTE));
       case "POST /instant":
         return Response.json(await this.recordInstant(body!.member, body!.seconds ?? 0, body!));
+      case "POST /speak":
+        return Response.json(await this.recordSpeak(body!.member, body!.seconds ?? 0, body!, body!.centsPerMinute ?? SPEAK_COST_CENTS_PER_MINUTE));
       case "POST /allowance":
         return Response.json(await this.allowance(body!.member, await this.month(), body!));
       case "GET /usage": {
         const member = url.searchParams.get("member") ?? "";
         const record = await this.month();
         const c = record.members[member] ?? { localMinutes: 0, instantSeconds: 0, lastLocalMinute: 0 };
-        return Response.json({ month: monthKey(), localMinutes: c.localMinutes, instantSeconds: c.instantSeconds, estimatedCents: cents(c) });
+        return Response.json({ month: monthKey(), localMinutes: c.localMinutes, instantSeconds: c.instantSeconds, speakSeconds: c.speakSeconds ?? 0, estimatedCents: cents(c) });
       }
       default:
         return new Response("not found", { status: 404 });
@@ -123,6 +128,31 @@ export class OrgMeter implements DurableObject {
     return this.allowance(member, record, limits);
   }
 
+  private async recordSpeak(member: string, seconds: number, limits: Limits, centsPerMinute: number): Promise<OrgAllowance> {
+    const record = await this.month();
+    const c = this.counters(record, member);
+    const add = Math.max(0, Math.ceil(seconds));
+    c.speakSeconds = (c.speakSeconds ?? 0) + add;
+    c.speakCents = (c.speakCents ?? 0) + (add / 60) * centsPerMinute;
+    await this.save(record);
+    if (add > 0) await this.rollupSpeak(member, add);
+    return this.allowance(member, record, limits);
+  }
+
+  /// Its own statement, so a database that has not had the speak_seconds
+  /// migration yet loses only this count, not the others.
+  private async rollupSpeak(member: string, speakSeconds: number): Promise<void> {
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      await this.env.DB.prepare(`
+        INSERT INTO usage_daily (org_id, member_id, day, local_minutes, instant_seconds, speak_seconds) VALUES (?, ?, ?, 0, 0, ?)
+        ON CONFLICT(org_id, member_id, day) DO UPDATE SET speak_seconds = speak_seconds + excluded.speak_seconds`,
+      ).bind(this.orgId, member, day, speakSeconds).run();
+    } catch (error) {
+      console.error("speak rollup failed", String(error));
+    }
+  }
+
   private async rollup(member: string, localMinutes: number, instantSeconds: number): Promise<void> {
     const day = new Date().toISOString().slice(0, 10);
     try {
@@ -165,7 +195,8 @@ export function orgMeterFor(env: Env, orgId: string, memberId: string, limits: L
   return {
     local: (centsPerMinute?: number) => call<OrgAllowance>("POST", "local", { ...payload, centsPerMinute }),
     instant: (seconds: number) => call<OrgAllowance>("POST", "instant", { ...payload, seconds }),
+    speak: (seconds: number, centsPerMinute?: number) => call<OrgAllowance>("POST", "speak", { ...payload, seconds, centsPerMinute }),
     allowance: () => call<OrgAllowance>("POST", "allowance", payload),
-    usage: () => call<{ month: string; localMinutes: number; instantSeconds: number; estimatedCents: number }>("GET", "usage"),
+    usage: () => call<{ month: string; localMinutes: number; instantSeconds: number; speakSeconds: number; estimatedCents: number }>("GET", "usage"),
   };
 }

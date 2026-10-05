@@ -6,6 +6,7 @@ import { meterFor } from "./meter";
 import { orgMeterFor } from "./orgmeter";
 import { translate } from "./translate";
 import { realtime } from "./realtime";
+import { speak } from "./speak";
 import { activatedPage, alreadyActivatedPage, companyActivatedPage, notPaidPage, refusedPage } from "./pages";
 import { admin, adminCookie, bootstrap } from "./admin";
 import { authorizeURL, discover, exchangeCode, pkce, verifyWithIssuer } from "./oidc";
@@ -15,7 +16,7 @@ export { CustomerMeter } from "./meter";
 export { OrgMeter } from "./orgmeter";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
 
@@ -69,6 +70,8 @@ export default {
           return translate(request, env, who);
         case "GET /v1/realtime":
           return realtime(request, env, who);
+        case "POST /v1/speak":
+          return speak(request, env, who, ctx);
         case "GET /v1/me":
           return me(env, who);
         case "POST /v1/portal": {
@@ -115,6 +118,7 @@ async function me(env: Env, who: Awaited<ReturnType<typeof authenticate>> & obje
     month: usage.month,
     localMinutes: usage.localMinutes,
     instantSeconds: usage.instantSeconds,
+    speakSeconds: usage.speakSeconds,
     estimatedCents: usage.estimatedCents,
     capCents: org.memberCapCents,
   });

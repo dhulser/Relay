@@ -1026,6 +1026,7 @@ final class AppState: ObservableObject {
         }
         if !policy.allowTranscript, keepTranscript { keepTranscript = false; transcript.removeAll() }
         if !policy.allowMicrophone, audioSource == .microphone { audioSource = .systemAudio }
+        if !policy.allowSpeak, speakEnabled { speakEnabled = false }
         if !policy.allowInstant {
             if provider == .openaiRealtime { provider = .openai }
             if comparisonLeft.isInstant { comparisonLeft = .openai(openAIModel) }
@@ -1047,11 +1048,21 @@ final class AppState: ObservableObject {
             model: whisperModel, modelURL: store.url(for: whisperModel), adaptiveSilence: true)
 
         let apple = AppleSpeechSynthesizer(preference: speakVoice)
-        // Your own OpenAI key even on a hosted account: the hosted tier has no
-        // speech route yet (docs/spoken-replies.md §13, phase 5).
-        let openAIKey = KeychainService.loadAPIKey(for: .openai)
-        let synthesizer: SpeechSynthesizing = openAIKey.map { OpenAISpeechSynthesizer(apiKey: $0, voice: speakVoice) } ?? apple
-        if openAIKey == nil {
+        let synthesizer: SpeechSynthesizing
+        var hasNaturalVoice = true
+        if hosted.isActive, let token = hosted.token {
+            // The account's key, through the Relay API, metered per second.
+            guard hosted.policy.allowSpeak else {
+                warning = "\(hosted.companyName ?? "Your company") has turned Speak off."
+                return
+            }
+            synthesizer = HostedSpeechSynthesizer(token: token, voice: speakVoice,
+                                                  accountName: hosted.isCompany ? (hosted.companyName ?? "Company") : "Relay Hosted")
+        } else if let key = KeychainService.loadAPIKey(for: .openai) {
+            synthesizer = OpenAISpeechSynthesizer(apiKey: key, voice: speakVoice)
+        } else {
+            synthesizer = apple
+            hasNaturalVoice = false
             warning = "Speak is using the Mac's built-in voice. Add an OpenAI key in Settings for the natural ones."
         }
 
@@ -1068,7 +1079,7 @@ final class AppState: ObservableObject {
                                                instructions: TranslationPrompt.spoken(from: from, to: to))
             },
             synthesizer: synthesizer,
-            fallback: openAIKey == nil ? nil : apple,
+            fallback: hasNaturalVoice ? apple : nil,
             ownMicrophone: audioSource != .microphone,
             confirmBeforeSpeaking: speakConfirm,
             stream: stream)

@@ -156,7 +156,7 @@ struct AccountSection: View {
     private var usageRow: some View {
         if let usage = hosted.usage {
             LabeledContent("This month") {
-                Text("\(usage.localMinutes) min Local · \(usage.instantMinutes) min Instant")
+                Text("\(usage.localMinutes) min Local · \(usage.instantMinutes) min Instant" + (usage.speakMinutes > 0 ? " · \(usage.speakMinutes) min Speak" : ""))
                     .foregroundStyle(.secondary)
             }
         }

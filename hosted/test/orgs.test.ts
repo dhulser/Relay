@@ -9,8 +9,8 @@ describe("orgs", () => {
   });
 
   it("policy defaults to everything allowed and tolerates junk", () => {
-    expect(parsePolicy(null)).toEqual({ allowInstant: true, allowTranscript: true, allowMicrophone: true });
-    expect(parsePolicy("{nope")).toEqual({ allowInstant: true, allowTranscript: true, allowMicrophone: true });
-    expect(parsePolicy('{"allowInstant":false}')).toEqual({ allowInstant: false, allowTranscript: true, allowMicrophone: true });
+    expect(parsePolicy(null)).toEqual({ allowInstant: true, allowTranscript: true, allowMicrophone: true, allowSpeak: true });
+    expect(parsePolicy("{nope")).toEqual({ allowInstant: true, allowTranscript: true, allowMicrophone: true, allowSpeak: true });
+    expect(parsePolicy('{"allowInstant":false}')).toEqual({ allowInstant: false, allowTranscript: true, allowMicrophone: true, allowSpeak: true });
   });
 });

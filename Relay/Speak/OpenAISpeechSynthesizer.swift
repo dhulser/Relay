@@ -36,47 +36,53 @@ final class OpenAISpeechSynthesizer: SpeechSynthesizing {
     }
 
     func synthesize(_ text: String, in language: Language) -> AsyncThrowingStream<AVAudioPCMBuffer, Error> {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/speech")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(Body(
+            model: Self.model, voice: voice.rawValue, input: text,
+            instructions: Self.instructions, response_format: "pcm"))
+        return Self.stream(request, on: session, from: name)
+    }
+
+    /// Runs a request whose reply is raw 24 kHz Int16 PCM and hands the audio
+    /// on in 100 ms buffers. Shared with the hosted route, which returns the
+    /// same bytes.
+    static func stream(_ request: URLRequest, on session: URLSession, from name: String) -> AsyncThrowingStream<AVAudioPCMBuffer, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/speech")!)
-                    request.httpMethod = "POST"
-                    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.httpBody = try JSONEncoder().encode(Body(
-                        model: Self.model, voice: voice.rawValue, input: text,
-                        instructions: Self.instructions, response_format: "pcm"))
-
                     let started = Date()
                     let (bytes, response) = try await session.bytes(for: request)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     guard status == 200 else {
                         var body = Data()
                         for try await byte in bytes { body.append(byte); if body.count > 2000 { break } }
-                        let message = Self.errorMessage(in: body) ?? "no detail"
-                        Log.error(.speak, "Speech request failed (\(status)): \(message)")
+                        let message = errorMessage(in: body) ?? "no detail"
+                        Log.error(.speak, "\(name) speech request failed (\(status)): \(message)")
                         throw SpeechError.server(status, message)
                     }
 
                     var pending = Data()
-                    pending.reserveCapacity(Self.chunkBytes * 2)
+                    pending.reserveCapacity(chunkBytes * 2)
                     var first = true
                     for try await byte in bytes {
                         pending.append(byte)
-                        if pending.count >= Self.chunkBytes {
+                        if pending.count >= chunkBytes {
                             if first {
                                 first = false
-                                Log.info(.speak, "First audio after \(String(format: "%.2f", Date().timeIntervalSince(started))) s")
+                                Log.info(.speak, "\(name): first audio after \(String(format: "%.2f", Date().timeIntervalSince(started))) s")
                             }
-                            if let buffer = Self.buffer(fromPCM16: pending.prefix(Self.chunkBytes)) {
+                            if let buffer = buffer(fromPCM16: pending.prefix(chunkBytes)) {
                                 continuation.yield(buffer)
                             }
-                            pending.removeFirst(Self.chunkBytes)
+                            pending.removeFirst(chunkBytes)
                         }
                     }
                     // An odd trailing byte is half a sample; drop it.
                     let whole = pending.count - pending.count % 2
-                    if whole > 0, let buffer = Self.buffer(fromPCM16: pending.prefix(whole)) {
+                    if whole > 0, let buffer = buffer(fromPCM16: pending.prefix(whole)) {
                         continuation.yield(buffer)
                     }
                     continuation.finish()

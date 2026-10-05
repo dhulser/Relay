@@ -173,6 +173,7 @@ async function consolePage(env: Env, org: Org, who: Extract<Principal, { kind: "
       <div class="check"><input type="checkbox" name="allowInstant" id="ai" ${org.policy.allowInstant ? "checked" : ""}><label for="ai" style="margin:0">Allow Instant mode (audio streams to OpenAI)</label></div>
       <div class="check"><input type="checkbox" name="allowTranscript" id="at" ${org.policy.allowTranscript ? "checked" : ""}><label for="at" style="margin:0">Allow keeping a transcript</label></div>
       <div class="check"><input type="checkbox" name="allowMicrophone" id="am" ${org.policy.allowMicrophone ? "checked" : ""}><label for="am" style="margin:0">Allow the microphone as a source</label></div>
+      <div class="check"><input type="checkbox" name="allowSpeak" id="as" ${org.policy.allowSpeak ? "checked" : ""}><label for="as" style="margin:0">Allow Speak (talking back through a synthetic voice; needs the OpenAI key, about 90¢ an hour of speech)</label></div>
       <label>Per-person monthly limit, in dollars at list rates (0 for none)</label>
       <input type="number" name="member_cap" min="0" step="1" value="${org.memberCapCents / 100}">
       <label>Company monthly limit, in dollars (0 for none)</label>
@@ -203,6 +204,7 @@ async function saveSettings(request: Request, env: Env, org: Org, who: Extract<P
     allowInstant: form.get("allowInstant") === "on",
     allowTranscript: form.get("allowTranscript") === "on",
     allowMicrophone: form.get("allowMicrophone") === "on",
+    allowSpeak: form.get("allowSpeak") === "on",
   };
   const memberCap = Math.max(0, Math.round(Number(form.get("member_cap") ?? 0) * 100));
   const orgCap = Math.max(0, Math.round(Number(form.get("org_cap") ?? 0) * 100));
@@ -236,14 +238,14 @@ async function memberAction(request: Request, env: Env, org: Org, who: Extract<P
 
 async function usageCSV(env: Env, org: Org, month: string): Promise<Response> {
   const { results } = await env.DB.prepare(`
-    SELECT u.day, m.email, m.name, u.local_minutes, u.instant_seconds
+    SELECT u.day, m.email, m.name, u.local_minutes, u.instant_seconds, u.speak_seconds
       FROM usage_daily u JOIN members m ON m.id = u.member_id
      WHERE u.org_id = ? AND u.day LIKE ?
      ORDER BY u.day, m.email`,
-  ).bind(org.id, `${month}-%`).all<{ day: string; email: string; name: string | null; local_minutes: number; instant_seconds: number }>();
+  ).bind(org.id, `${month}-%`).all<{ day: string; email: string; name: string | null; local_minutes: number; instant_seconds: number; speak_seconds: number | null }>();
   const q = (s: string | null) => `"${(s ?? "").replace(/"/g, '""')}"`;
-  const lines = ["day,email,name,local_minutes,instant_minutes",
-    ...results.map((r) => `${r.day},${q(r.email)},${q(r.name)},${r.local_minutes},${(r.instant_seconds / 60).toFixed(1)}`)];
+  const lines = ["day,email,name,local_minutes,instant_minutes,speak_minutes",
+    ...results.map((r) => `${r.day},${q(r.email)},${q(r.name)},${r.local_minutes},${(r.instant_seconds / 60).toFixed(1)},${((r.speak_seconds ?? 0) / 60).toFixed(1)}`)];
   return new Response(lines.join("\n") + "\n", {
     headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="relay-${org.id}-${month}.csv"` },
   });

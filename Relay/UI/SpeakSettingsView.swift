@@ -5,11 +5,20 @@ struct SpeakSettingsView: View {
     @EnvironmentObject private var appState: AppState
 
     private var hasOpenAIKey: Bool { KeychainService.loadAPIKey(for: .openai) != nil }
+    private var onAccount: Bool { appState.hosted.isActive }
+    private var accountName: String { appState.hosted.isCompany ? (appState.hosted.companyName ?? "your company") : "Relay Hosted" }
+    private var companyForbids: Bool { appState.hosted.isActive && !appState.hosted.policy.allowSpeak }
 
     var body: some View {
         Form {
             Section {
                 Toggle("Speak for me", isOn: $appState.speakEnabled)
+                    .disabled(companyForbids)
+                if companyForbids {
+                    Text("\(accountName) has turned Speak off for its Relay accounts.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.orange)
+                }
                 Text("While Relay is listening, hold \(AppState.speakKeyDescription), say something in \(appState.targetLanguage.displayName), and let go. The other person hears it in their language, in a synthetic voice. Your line appears in the subtitles marked You.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
@@ -51,7 +60,11 @@ struct SpeakSettingsView: View {
                 Picker("Voice", selection: $appState.speakVoice) {
                     ForEach(SpeakVoice.allCases) { Text("\($0.displayName) · \($0.detail)").tag($0) }
                 }
-                if hasOpenAIKey {
+                if onAccount {
+                    Text("OpenAI's voice through \(accountName)'s account, metered by the second of speech and counted against the same monthly limit. If it fails mid-call, the Mac's own voice fills in.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                } else if hasOpenAIKey {
                     Text("OpenAI's voice, on your OpenAI key: about a cent and a half per minute of speech. If it fails mid-call, the Mac's own voice fills in.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)

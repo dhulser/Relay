@@ -8,10 +8,18 @@ export const INSTANT_CENTS_PER_HOUR = 350;
 export const LOCAL_CENTS_PER_MINUTE = LOCAL_CENTS_PER_HOUR / 60;
 export const INSTANT_CENTS_PER_MINUTE = INSTANT_CENTS_PER_HOUR / 60;
 
+/// Speak: an hour of generated speech. OpenAI charges about 90 cents for it;
+/// hosted customers pay $1.50, a company on its own key pays what it costs.
+export const SPEAK_CENTS_PER_HOUR = 150;
+export const SPEAK_COST_CENTS_PER_HOUR = 90;
+export const SPEAK_CENTS_PER_MINUTE = SPEAK_CENTS_PER_HOUR / 60;
+export const SPEAK_COST_CENTS_PER_MINUTE = SPEAK_COST_CENTS_PER_HOUR / 60;
+
 /** Unit prices for Stripe's metered prices, as the decimal-cents strings it wants. */
 export const STRIPE_UNIT_AMOUNT_DECIMAL = {
   local: LOCAL_CENTS_PER_MINUTE.toFixed(4),     // "0.6667"
   instant: INSTANT_CENTS_PER_MINUTE.toFixed(4), // "5.8333"
+  speak: SPEAK_CENTS_PER_MINUTE.toFixed(4),     // "2.5000"
 };
 
 /// What an hour of talking costs on each model, in cents, measured the way
@@ -38,14 +46,19 @@ export function localCentsPerMinute(model: string): number {
 export interface MonthUsage {
   localMinutes: number;
   instantSeconds: number;
+  /// Seconds of speech generated for Speak. Absent in records written
+  /// before Speak existed.
+  speakSeconds?: number;
 }
 
 /** What the month has cost so far, base fee included, rounded up to a cent. */
 export function estimatedCents(usage: MonthUsage): number {
   const instantMinutes = usage.instantSeconds / 60;
+  const speakMinutes = (usage.speakSeconds ?? 0) / 60;
   const raw = BASE_CENTS_PER_MONTH
     + usage.localMinutes * LOCAL_CENTS_PER_MINUTE
-    + instantMinutes * INSTANT_CENTS_PER_MINUTE;
+    + instantMinutes * INSTANT_CENTS_PER_MINUTE
+    + speakMinutes * SPEAK_CENTS_PER_MINUTE;
   return Math.ceil(raw);
 }
 
