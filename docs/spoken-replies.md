@@ -398,7 +398,17 @@ a character meter.
    the incoming side is muted while Relay speaks on *every* source, because the
    system tap hears the speakers too.
 3. **On a call**: Relay Voice, pass-through, popover status,
-   Settings tab complete. This is the feature as you described it.
+   Settings tab complete. This is the feature as you described it. **Built 4 Oct.**
+   The call line (output engine, microphone pass-through, Relay Voice device) comes
+   up at launch whenever Speak is set to the call and stays up between sessions,
+   so a call app's choice of microphone never goes dead. Verified by recording
+   from Relay Voice during a self-test: room noise at −45 dB through the
+   pass-through, then a nine-second burst at −20 dB where Cedar's Spanish played,
+   then room noise again; Relay's own playback was excluded from the system tap
+   and nothing of the Spanish was subtitled. Pass-through drops buffers if it
+   falls more than 150 ms behind, so input and output clocks drifting apart
+   cannot grow the delay over a long call. Confirm-before-speaking: a tap of the
+   key sends, a hold replaces, the popover has Say it / Drop it.
 4. **Latency**: inference during the hold, streaming sentence split, parallel
    synthesis.
 5. **Hosted** `/v1/speak`, bare-key option, your own voice.

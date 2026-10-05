@@ -10,6 +10,12 @@ import Combine
 /// direction reversed and a spoken-output prompt → a voice → the output.
 /// Everything is queued in order, so two quick sentences come out as two
 /// sentences. Pressing the key while it is speaking cuts the speech off.
+///
+/// Two lifetimes live here. The *call line* (the output engine, the
+/// microphone pass-through and the Relay Voice device) stays up for as long
+/// as Speak is set to the call, so a call app that picked Relay Voice as its
+/// microphone keeps hearing you between sessions. The *session* (recogniser,
+/// translators) starts and stops with Relay's listening.
 @MainActor
 final class SpokenReplyController: ObservableObject {
 
@@ -18,6 +24,8 @@ final class SpokenReplyController: ObservableObject {
         case listening
         /// Recognising or translating; from the outside the same wait.
         case working
+        /// A translation is waiting for the user to send or drop it.
+        case confirming
         case speaking
     }
 
@@ -37,6 +45,8 @@ final class SpokenReplyController: ObservableObject {
         /// Whether to open the microphone here. False when the session is
         /// already listening to it and routes buffers in.
         let ownMicrophone: Bool
+        /// Show the translation and wait for a tap before speaking it.
+        let confirmBeforeSpeaking: Bool
         /// The subtitle stream the You line goes to.
         let stream: SubtitleStream
     }
@@ -46,6 +56,11 @@ final class SpokenReplyController: ObservableObject {
     /// True once the recogniser and the output are up and a hold will be
     /// heard. Loading the speech model takes a few seconds the first time.
     @Published private(set) var ready = false
+    /// Whether the Relay Voice device exists right now.
+    @Published private(set) var callLineUp = false
+    /// Whether some other process is reading Relay Voice: the nearest thing
+    /// to "Zoom has picked it". Nil while the device does not exist.
+    @Published private(set) var callAppIsUsingDevice: Bool?
 
     /// Something you said and what was spoken for it, for the transcript and
     /// the tally.
@@ -59,12 +74,17 @@ final class SpokenReplyController: ObservableObject {
     private var setup: Setup?
     private var microphone: MicrophoneCaptureService?
     private let output = VoiceOutputService()
+    private let device = RelayVoiceDevice()
+    private var callLine = false
+    private var callMonitor: RelayVoiceDevice.Monitor = .silent
+    private var devicePoll: Timer?
     private var translators: [Language: TextTranslating] = [:]
     /// What was said, waiting for its translation, with the language it is
     /// being translated into.
     private var pending: [(said: String, language: Language)] = []
     private var speechQueue: [(text: String, language: Language)] = []
     private var speechTask: Task<Void, Never>?
+    private var awaitingConfirmation: (text: String, language: Language, said: String)?
     private var holdStarted: Date?
     private var holdCeiling: Timer?
     private var catchTimer: Timer?
@@ -73,8 +93,103 @@ final class SpokenReplyController: ObservableObject {
     /// Nobody can usefully hold for longer; a lost key-up would otherwise
     /// record for ever.
     static let maximumHold: TimeInterval = 60
+    /// A press shorter than this while a translation waits means "send it",
+    /// not "say something else".
+    static let confirmTap: TimeInterval = 0.4
 
-    // MARK: - Lifecycle
+    // MARK: - The call line
+
+    /// Brings Relay Voice up or down. Up: the output runs, the microphone is
+    /// copied through it, and the device exists for call apps to pick.
+    func setCallLine(_ on: Bool, monitor: RelayVoiceDevice.Monitor, hearOriginal: Bool) {
+        gate.setHearOriginal(hearOriginal)
+        if on, callLine, monitor != callMonitor {
+            // Only the tap's mute differs; rebuild it.
+            device.destroy()
+            callMonitor = monitor
+            createDeviceWhenReady()
+            return
+        }
+        guard on != callLine else { return }
+        callLine = on
+        callMonitor = monitor
+        gate.setPassThrough(on)
+        if on {
+            Task { await bringCallLineUp() }
+        } else {
+            takeCallLineDown()
+        }
+    }
+
+    private func bringCallLineUp() async {
+        do {
+            try output.start()
+            if microphone == nil {
+                let microphone = MicrophoneCaptureService()
+                microphone.onAudioBuffer = { [weak self] buffer in self?.receive(buffer) }
+                microphone.onError = { [weak self] error in
+                    MainActor.assumeIsolated { self?.onWarning?(error.localizedDescription) }
+                }
+                try await microphone.start()
+                self.microphone = microphone
+            }
+        } catch {
+            onWarning?("Relay Voice couldn't start. \(error.localizedDescription)")
+            callLine = false
+            gate.setPassThrough(false)
+            return
+        }
+        guard callLine else { return }
+        createDeviceWhenReady()
+    }
+
+    /// Core Audio gives a process an audio object only once it has done IO,
+    /// so the device may have to wait a moment for the output to render.
+    private func createDeviceWhenReady(attempt: Int = 0) {
+        guard callLine, !device.exists else { return }
+        do {
+            try device.create(monitor: callMonitor)
+            callLineUp = true
+            startDevicePoll()
+        } catch RelayVoiceDevice.DeviceError.noProcessObject where attempt < 10 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.createDeviceWhenReady(attempt: attempt + 1)
+            }
+        } catch {
+            onWarning?(error.localizedDescription)
+        }
+    }
+
+    private func takeCallLineDown() {
+        devicePoll?.invalidate(); devicePoll = nil
+        device.destroy()
+        callLineUp = false
+        callAppIsUsingDevice = nil
+        output.resetPassThrough()
+        if !running {
+            output.stop()
+            if let microphone {
+                self.microphone = nil
+                Task { await microphone.stop() }
+            }
+        }
+    }
+
+    private func startDevicePoll() {
+        devicePoll?.invalidate()
+        devicePoll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.device.exists else { return }
+                let inUse = self.device.isInUseByAnotherApp
+                if inUse != self.callAppIsUsingDevice {
+                    self.callAppIsUsingDevice = inUse
+                    Log.info(.speak, inUse ? "A call app is reading Relay Voice" : "No app is reading Relay Voice")
+                }
+            }
+        }
+    }
+
+    // MARK: - Session
 
     func start(_ setup: Setup) async throws {
         guard !running else { return }
@@ -93,10 +208,8 @@ final class SpokenReplyController: ObservableObject {
         }
         try await setup.transcriber.start(language: setup.myLanguage)
         guard running else { return }
-        gate.setTranscriber(setup.transcriber)
-        ready = true
 
-        if setup.ownMicrophone {
+        if setup.ownMicrophone, microphone == nil {
             let microphone = MicrophoneCaptureService()
             microphone.onAudioBuffer = { [weak self] buffer in self?.receive(buffer) }
             microphone.onError = { [weak self] error in
@@ -105,7 +218,9 @@ final class SpokenReplyController: ObservableObject {
             try await microphone.start()
             self.microphone = microphone
         }
-        Log.info(.speak, "Speak ready: \(setup.myLanguage.displayName) → \(setup.theirLanguage()?.displayName ?? "their language, once heard"), voice \(setup.synthesizer.name)")
+        gate.setTranscriber(setup.transcriber)
+        ready = true
+        Log.info(.speak, "Speak ready: \(setup.myLanguage.displayName) → \(setup.theirLanguage()?.displayName ?? "their language, once heard"), voice \(setup.synthesizer.name), to \(callLine ? "Relay Voice" : "the speakers")")
     }
 
     func stop() {
@@ -120,12 +235,17 @@ final class SpokenReplyController: ObservableObject {
         speechTask?.cancel(); speechTask = nil
         speechQueue.removeAll()
         pending.removeAll()
+        awaitingConfirmation = nil
         translators.values.forEach { $0.cancel() }
         translators.removeAll()
-        output.stop()
-        if let microphone {
-            self.microphone = nil
-            Task { await microphone.stop() }
+        output.interrupt()
+        gate.setSpeaking(false)
+        if !callLine {
+            output.stop()
+            if let microphone {
+                self.microphone = nil
+                Task { await microphone.stop() }
+            }
         }
         if let transcriber = setup?.transcriber {
             Task { await transcriber.stop() }
@@ -143,9 +263,11 @@ final class SpokenReplyController: ObservableObject {
         if phase == .speaking { interruptSpeech() }
         gate.setHolding(true)
         holdStarted = Date()
-        phase = .listening
-        let their = setup.theirLanguage()?.displayName ?? "…"
-        show("Listening · \(setup.myLanguage.displayName) → \(their)")
+        if phase != .confirming {
+            phase = .listening
+            let their = setup.theirLanguage()?.displayName ?? "…"
+            show("Listening · \(setup.myLanguage.displayName) → \(their)")
+        }
         holdCeiling?.invalidate()
         holdCeiling = Timer.scheduledTimer(withTimeInterval: Self.maximumHold, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.endHold() }
@@ -160,6 +282,17 @@ final class SpokenReplyController: ObservableObject {
         let held = holdStarted.map { Date().timeIntervalSince($0) } ?? 0
         holdStarted = nil
         Log.info(.speak, "Hold ended after \(String(format: "%.1f", held)) s")
+
+        // A tap while a translation waits sends it; a real hold replaces it.
+        if awaitingConfirmation != nil {
+            if held < Self.confirmTap {
+                confirm()
+                return
+            }
+            awaitingConfirmation = nil
+            setup.stream.manager.complete("", you: true)
+        }
+
         setup.transcriber.flush()
         phase = .working
         show("Translating…")
@@ -175,9 +308,29 @@ final class SpokenReplyController: ObservableObject {
         }
     }
 
-    /// Tap-to-talk: one press starts, the next stops.
+    /// Tap-to-talk: one press starts, the next stops. While a translation
+    /// waits, a press sends it.
     func toggleHold() {
+        if awaitingConfirmation != nil, !gate.isHolding { confirm(); return }
         gate.isHolding ? endHold() : beginHold()
+    }
+
+    /// Speak the translation that is waiting.
+    func confirm() {
+        guard let waiting = awaitingConfirmation else { return }
+        awaitingConfirmation = nil
+        onLine?(waiting.said, waiting.text, waiting.language)
+        speechQueue.append((waiting.text, waiting.language))
+        speakNext()
+    }
+
+    /// Throw the waiting translation away.
+    func discard() {
+        guard awaitingConfirmation != nil else { return }
+        awaitingConfirmation = nil
+        setup?.stream.manager.complete("", you: true)
+        phase = .idle
+        show(nil)
     }
 
     func interruptSpeech() {
@@ -185,13 +338,16 @@ final class SpokenReplyController: ObservableObject {
         speechTask = nil
         speechQueue.removeAll()
         output.interrupt()
+        gate.setSpeaking(false)
         if phase == .speaking { phase = .idle; show(nil) }
     }
 
-    /// Audio thread. Buffers are only looked at while the key is down.
+    /// Audio thread. While the key is down the buffer is for the recogniser;
+    /// otherwise, on a call, it is copied through to Relay Voice.
     nonisolated func receive(_ buffer: AVAudioPCMBuffer) {
-        guard let transcriber = gate.transcriberIfHolding else { return }
-        transcriber.receive(buffer)
+        let route = gate.route
+        if let transcriber = route.transcriber { transcriber.receive(buffer) }
+        if route.passThrough { output.passThrough(buffer) }
     }
 
     // MARK: - Pipeline
@@ -242,11 +398,20 @@ final class SpokenReplyController: ObservableObject {
         guard running, let setup else { return }
         let waiting = pending.isEmpty ? (said: "", language: setup.myLanguage) : pending.removeFirst()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        setup.stream.manager.complete(trimmed, original: waiting.said, you: true)
         guard !trimmed.isEmpty else {
+            setup.stream.manager.complete("", you: true)
             if pending.isEmpty, speechQueue.isEmpty, speechTask == nil { phase = .idle; show(nil) }
             return
         }
+        if setup.confirmBeforeSpeaking {
+            // Leave it on screen as the in-flight line until they decide.
+            setup.stream.manager.updatePartial(trimmed, you: true)
+            awaitingConfirmation = (trimmed, waiting.language, waiting.said)
+            phase = .confirming
+            show("Tap the key to say it, or hold to say something else")
+            return
+        }
+        setup.stream.manager.complete(trimmed, original: waiting.said, you: true)
         onLine?(waiting.said, trimmed, waiting.language)
         speechQueue.append((trimmed, waiting.language))
         speakNext()
@@ -255,6 +420,9 @@ final class SpokenReplyController: ObservableObject {
     private func speakNext() {
         guard speechTask == nil, let setup, !speechQueue.isEmpty else { return }
         let next = speechQueue.removeFirst()
+        if phase == .confirming {
+            setup.stream.manager.complete(next.text, original: awaitingConfirmation?.said, you: true)
+        }
         phase = .speaking
         show("Speaking…")
         gate.setSpeaking(true)
@@ -343,6 +511,8 @@ final class SpokenReplyController: ObservableObject {
             receive(piece)
             offset += count
         }
+        // Long enough to count as a hold rather than a confirm tap.
+        holdStarted = Date().addingTimeInterval(-1)
         endHold()
     }
     #endif
@@ -367,16 +537,28 @@ final class SpokenReplyController: ObservableObject {
     /// The little that the audio thread needs to know, behind a lock, so the
     /// main-actor controller never has to be touched from there.
     final class Gate {
+        struct Route {
+            let transcriber: WhisperTranscriptionService?
+            let passThrough: Bool
+        }
+
         private let lock = NSLock()
         private var holding = false
         private var transcriber: WhisperTranscriptionService?
         private var speakingUntil = Date.distantPast
+        private var passThrough = false
+        private var hearOriginal = false
 
         var isHolding: Bool { lock.withLock { holding } }
 
-        /// The transcriber to feed, only while the key is down.
-        var transcriberIfHolding: WhisperTranscriptionService? {
-            lock.withLock { holding ? transcriber : nil }
+        /// Where a microphone buffer goes right now. Held: to the recogniser,
+        /// and through to the call only if they are meant to hear the
+        /// original too. Not held: through to the call when on one.
+        var route: Route {
+            lock.withLock {
+                Route(transcriber: holding ? transcriber : nil,
+                      passThrough: passThrough && (!holding || hearOriginal))
+            }
         }
 
         /// While Relay itself is talking, the microphone hears it; the
@@ -385,6 +567,8 @@ final class SpokenReplyController: ObservableObject {
 
         func setHolding(_ value: Bool) { lock.withLock { holding = value } }
         func setTranscriber(_ value: WhisperTranscriptionService?) { lock.withLock { transcriber = value } }
+        func setPassThrough(_ value: Bool) { lock.withLock { passThrough = value } }
+        func setHearOriginal(_ value: Bool) { lock.withLock { hearOriginal = value } }
         func setSpeaking(_ speaking: Bool, tail: TimeInterval = 0) {
             lock.withLock { speakingUntil = speaking ? .distantFuture : Date().addingTimeInterval(tail) }
         }

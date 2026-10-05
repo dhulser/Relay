@@ -27,6 +27,32 @@ enum SpeakVoice: String, CaseIterable, Identifiable, Codable {
     var prefersFemale: Bool { self == .nova }
 }
 
+/// Where the voice goes.
+enum SpeakOutput: String, CaseIterable, Identifiable, Codable {
+    /// For someone in the room.
+    case speakers
+    /// Through the Relay Voice virtual microphone, picked in the call app.
+    case call
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .speakers: return "This Mac's speakers"
+        case .call: return "The call"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .speakers:
+            return "For someone in the room with you."
+        case .call:
+            return "Through a microphone called Relay Voice that you pick in Zoom, Meet, Teams or FaceTime. Nobody at this Mac hears it unless you ask."
+        }
+    }
+}
+
 extension Language {
     /// The language for a recogniser's ISO-639-1 code, if Relay offers it.
     init?(isoCode: String) {

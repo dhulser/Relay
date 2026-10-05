@@ -10,7 +10,39 @@ struct SpeakSettingsView: View {
         Form {
             Section {
                 Toggle("Speak for me", isOn: $appState.speakEnabled)
-                Text("While Relay is listening, hold \(AppState.speakKeyDescription), say something in \(appState.targetLanguage.displayName), and let go. The other person hears it in their language, in a synthetic voice, through this Mac's speakers. Your line appears in the subtitles marked You.")
+                Text("While Relay is listening, hold \(AppState.speakKeyDescription), say something in \(appState.targetLanguage.displayName), and let go. The other person hears it in their language, in a synthetic voice. Your line appears in the subtitles marked You.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Where the voice goes") {
+                Picker("", selection: $appState.speakOutput) {
+                    ForEach(SpeakOutput.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text(appState.speakOutput.detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                if appState.speakOutput == .call {
+                    if appState.audioSource == .microphone {
+                        Text("Relay is listening to the microphone, which means the other person is in the room with you, so the voice goes to the speakers for now. Choose a different source under Translation to speak into a call.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.orange)
+                    } else {
+                        CallLineStatus(speak: appState.speak)
+                        Toggle("Also play it on this Mac", isOn: $appState.speakMonitor)
+                        Toggle("Let them hear my own voice too, while I talk", isOn: $appState.speakHearOriginal)
+                        Text("Between translations your real microphone passes straight through Relay Voice, so you can still just talk. Wear headphones, or the call hears itself through your microphone.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section("Before speaking") {
+                Toggle("Show me the translation first", isOn: $appState.speakConfirm)
+                Text("The translation waits on screen. Tap the key to say it, or hold the key to say something else instead. The popover has Say it and Drop it buttons too.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
@@ -56,11 +88,35 @@ struct SpeakSettingsView: View {
             }
 
             Section("Privacy") {
-                Text("The microphone is opened for the session and listened to only while the key is down. What you say is recognised on this Mac; the text goes to your translation provider and, for the natural voices, to OpenAI. Nothing is stored.")
+                Text("In the room, the microphone is opened for the session and listened to only while the key is down. On a call it stays open while Speak is on, so Relay Voice can carry your voice between translations; those buffers are copied, never recognised or sent anywhere. What you say with the key down is recognised on this Mac; the text goes to your translation provider and, for the natural voices, to OpenAI. Nothing is stored.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+
+/// Whether Relay Voice exists and whether a call app has picked it.
+private struct CallLineStatus: View {
+    @ObservedObject var speak: SpokenReplyController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(speak.callAppIsUsingDevice == true ? Color.green : (speak.callLineUp ? Color.orange : Color.gray))
+                .frame(width: 8, height: 8)
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var text: String {
+        guard speak.callLineUp else { return "Setting up Relay Voice…" }
+        return speak.callAppIsUsingDevice == true
+            ? "A call app is using Relay Voice as its microphone."
+            : "Relay Voice is ready. Pick it as the microphone in Zoom, Meet, Teams or FaceTime."
     }
 }

@@ -12,8 +12,8 @@ struct MenuBarView: View {
             Spacer().frame(height: 16)
             startButton
             statusLine
-            if appState.speakEnabled && appState.status.isRunning {
-                SpeakRow(speak: appState.speak)
+            if appState.speakEnabled && (appState.status.isRunning || appState.speakUsesCall) {
+                SpeakRow(speak: appState.speak, onCall: appState.speakUsesCall)
             }
             notice
             tally
@@ -290,27 +290,47 @@ private struct LevelBars: View {
 }
 
 
-/// Hold-to-talk with the mouse, and a reminder of the key. Its own view so
-/// the controller's phase changes redraw it.
+/// Hold-to-talk with the mouse, a reminder of the key, and on a call whether
+/// anything is listening to Relay Voice. Its own view so the controller's
+/// changes redraw it.
 private struct SpeakRow: View {
     @ObservedObject var speak: SpokenReplyController
+    let onCall: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(speak.phase == .listening ? SubtitleView.youColour : Color.secondary.opacity(0.15)))
-                .foregroundStyle(speak.phase == .listening ? .black : .primary)
-                .opacity(speak.ready ? 1 : 0.5)
-                .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-                    if pressing { speak.beginHold() } else { speak.endHold() }
-                }, perform: {})
-            Text("or hold \(AppState.speakKeyDescription)")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-            Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            if speak.running {
+                HStack(spacing: 10) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(speak.phase == .listening ? SubtitleView.youColour : Color.secondary.opacity(0.15)))
+                        .foregroundStyle(speak.phase == .listening ? .black : .primary)
+                        .opacity(speak.ready ? 1 : 0.5)
+                        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+                            if pressing { speak.beginHold() } else { speak.endHold() }
+                        }, perform: {})
+                    if speak.phase == .confirming {
+                        Button("Say it") { speak.confirm() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        Button("Drop it") { speak.discard() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    } else {
+                        Text("or hold \(AppState.speakKeyDescription)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                }
+            }
+            if onCall, let line = callLine {
+                Text(line)
+                    .font(.system(size: 11))
+                    .foregroundStyle(speak.callAppIsUsingDevice == true ? .secondary : .tertiary)
+            }
         }
         .padding(.top, 10)
     }
@@ -321,7 +341,15 @@ private struct SpeakRow: View {
         case .idle: return "Hold to talk"
         case .listening: return "Listening…"
         case .working: return "Translating…"
+        case .confirming: return "Ready to say"
         case .speaking: return "Speaking…"
         }
+    }
+
+    private var callLine: String? {
+        guard speak.callLineUp else { return "Setting up Relay Voice…" }
+        return speak.callAppIsUsingDevice == true
+            ? "A call app is using Relay Voice as its microphone."
+            : "Pick Relay Voice as the microphone in your call app."
     }
 }

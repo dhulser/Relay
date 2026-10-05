@@ -299,7 +299,7 @@ final class AppState: ObservableObject {
 
     /// Where the audio comes from: everything, chosen apps, or the microphone.
     @Published var audioSource: AudioSource {
-        didSet { defaults.set(audioSource.rawValue, forKey: Self.audioSourceKey) }
+        didSet { defaults.set(audioSource.rawValue, forKey: Self.audioSourceKey); applySpeakLine() }
     }
     /// Bundle identifiers of the apps to hear when `audioSource` is `.apps`.
     @Published var chosenApps: Set<String> {
@@ -332,7 +332,7 @@ final class AppState: ObservableObject {
 
     /// Hold a key, talk, and the other person hears it in their language.
     @Published var speakEnabled: Bool {
-        didSet { defaults.set(speakEnabled, forKey: Self.speakEnabledKey) }
+        didSet { defaults.set(speakEnabled, forKey: Self.speakEnabledKey); applySpeakLine() }
     }
     @Published var speakVoice: SpeakVoice {
         didSet { defaults.set(speakVoice.rawValue, forKey: Self.speakVoiceKey) }
@@ -344,6 +344,34 @@ final class AppState: ObservableObject {
     /// Tap to start and tap to stop, instead of holding.
     @Published var speakToggleMode: Bool {
         didSet { defaults.set(speakToggleMode, forKey: Self.speakToggleKey) }
+    }
+    /// The speakers for someone in the room, or Relay Voice for a call.
+    @Published var speakOutput: SpeakOutput {
+        didSet { defaults.set(speakOutput.rawValue, forKey: Self.speakOutputKey); applySpeakLine() }
+    }
+    /// On a call, also play the voice on this Mac.
+    @Published var speakMonitor: Bool {
+        didSet { defaults.set(speakMonitor, forKey: Self.speakMonitorKey); applySpeakLine() }
+    }
+    /// On a call, keep passing your real voice through while the key is held.
+    @Published var speakHearOriginal: Bool {
+        didSet { defaults.set(speakHearOriginal, forKey: Self.speakHearOriginalKey); applySpeakLine() }
+    }
+    /// Show the translation and wait for a tap before saying it.
+    @Published var speakConfirm: Bool {
+        didSet { defaults.set(speakConfirm, forKey: Self.speakConfirmKey) }
+    }
+
+    /// Whether the voice really goes to Relay Voice: the call output, unless
+    /// Relay is listening to the microphone, which means the other person is
+    /// in the room and there is no call to speak into.
+    var speakUsesCall: Bool { speakEnabled && speakOutput == .call && audioSource != .microphone }
+
+    /// Keeps the Relay Voice device and the microphone pass-through in step
+    /// with the settings, session or no session, so a call app that picked
+    /// Relay Voice keeps hearing you.
+    private func applySpeakLine() {
+        speak.setCallLine(speakUsesCall, monitor: speakMonitor ? .audible : .silent, hearOriginal: speakHearOriginal)
     }
     let speak = SpokenReplyController()
     private var speakHoldKey: GlobalHotKey?
@@ -396,6 +424,10 @@ final class AppState: ObservableObject {
     private static let speakVoiceKey = "speakVoice"
     private static let speakToKey = "speakTo"
     private static let speakToggleKey = "speakToggleMode"
+    private static let speakOutputKey = "speakOutput"
+    private static let speakMonitorKey = "speakMonitor"
+    private static let speakHearOriginalKey = "speakHearOriginal"
+    private static let speakConfirmKey = "speakConfirm"
     private static let providerKey = "translationProvider"
     private static let modelKey = "claudeModel"
     private static let openAIModelKey = "openAIModel"
@@ -431,6 +463,10 @@ final class AppState: ObservableObject {
         speakVoice = SpeakVoice(rawValue: defaults.string(forKey: Self.speakVoiceKey) ?? "") ?? .nova
         speakTo = SourceLanguageSetting(storageValue: defaults.string(forKey: Self.speakToKey) ?? "auto")
         speakToggleMode = defaults.bool(forKey: Self.speakToggleKey)
+        speakOutput = SpeakOutput(rawValue: defaults.string(forKey: Self.speakOutputKey) ?? "") ?? .speakers
+        speakMonitor = defaults.bool(forKey: Self.speakMonitorKey)
+        speakHearOriginal = defaults.bool(forKey: Self.speakHearOriginalKey)
+        speakConfirm = defaults.bool(forKey: Self.speakConfirmKey)
         provider = defaults.string(forKey: Self.providerKey).flatMap(TranslationProvider.init) ?? .claude
         claudeModel = defaults.string(forKey: Self.modelKey).flatMap(ClaudeModel.init) ?? .haiku45
         openAIModel = defaults.string(forKey: Self.openAIModelKey).flatMap(OpenAITextModel.init) ?? .luna
@@ -501,6 +537,7 @@ final class AppState: ObservableObject {
         refreshReadiness()
         applyShortcut()
         applyPolicy()
+        applySpeakLine()
         if hosted.isSignedIn { Task { await hosted.refreshUsage(); self.applyPolicy() } }
         Log.info(.app, "whisper.cpp \(WhisperRuntime.version), "
             + "\(WhisperRuntime.languageCount) languages; "
@@ -539,11 +576,12 @@ final class AppState: ObservableObject {
         // talking the Mac is hearing Relay, through the room or through the
         // system mix, and must not subtitle itself.
         let sharesMicrophone = audioSource == .microphone
+        let onCall = speakUsesCall
         let gate = speak.gate
         source.onAudioBuffer = { [weak self] buffer in
             guard let self else { return }
             if sharesMicrophone, gate.isHolding { self.speak.receive(buffer); return }
-            if gate.mutesIncoming { return }
+            if !onCall, gate.mutesIncoming { return }
             self.sharedTranscriber?.receive(buffer)
             for lane in self.lanes { lane.realtime?.receive(buffer) }
         }
@@ -1032,6 +1070,7 @@ final class AppState: ObservableObject {
             synthesizer: synthesizer,
             fallback: openAIKey == nil ? nil : apple,
             ownMicrophone: audioSource != .microphone,
+            confirmBeforeSpeaking: speakConfirm,
             stream: stream)
 
         speak.onLine = { [weak self] said, translation, language in
